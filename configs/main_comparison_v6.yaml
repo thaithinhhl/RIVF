@@ -1,0 +1,15 @@
+# Fixed 1-hop/2-hop, unbounded -- the only rows of this config
+# make_figures.py still reads (its dense_rag@600/ours@600 entries were
+# superseded by v7_300tok/v8_reranked; dropped here so scaling n_questions
+# doesn't re-pay for LLM calls on rows nothing uses).
+name: main_comparison_v6
+n_questions: 1000
+seed: 0
+call_llm: true
+methods:
+  - name: fixed_1hop
+    kind: fixed_hop
+    hops: 1
+  - name: fixed_2hop
+    kind: fixed_hop
+    hops: 2

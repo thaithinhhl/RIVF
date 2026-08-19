@@ -1,0 +1,12 @@
+# Experiment 1 at a 300-token budget for Dense RAG (the "ours" entry this
+# config used to also carry was the bi-encoder variant, superseded by
+# v8_reranked's reranker-enabled "ours" -- dropped here so scaling n_questions
+# doesn't re-pay for LLM calls on rows make_figures.py never reads).
+name: main_comparison_v7_300tok
+n_questions: 1000
+seed: 0
+call_llm: true
+methods:
+  - name: dense_rag
+    kind: dense_rag
+    budget_tokens: 300

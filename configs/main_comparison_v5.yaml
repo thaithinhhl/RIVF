@@ -1,0 +1,23 @@
+# Final combination validated with real LLM calls: title-prefixed embedding
+# (clear win) + entity-frequency-filtered graph (kept as a supporting
+# improvement) + alpha=0.6/budget=600 (kept fixed, preserving the
+# "semantic+graph combination" narrative rather than switching to alpha=0.0).
+name: main_comparison_v5
+n_questions: 200
+seed: 0
+call_llm: true
+methods:
+  - name: dense_rag
+    kind: dense_rag
+    budget_tokens: 600
+  - name: fixed_1hop
+    kind: fixed_hop
+    hops: 1
+  - name: fixed_2hop
+    kind: fixed_hop
+    hops: 2
+  - name: ours
+    kind: selective_graph
+    max_hops: 2
+    alpha: 0.6
+    budget_tokens: 600

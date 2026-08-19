@@ -1,0 +1,17 @@
+# Diagnostic ablation: does the "interleave" strategy (alternate turns
+# between semantic-only and graph-only rankings instead of blending into one
+# score) recover the "semantic-blind" bucket found by the stratified
+# diagnostic split (version1.md sec. 10)? Full run incl. LLM so Answer EM/F1
+# are measured too, not just SP metrics (a prior scratchpad check only had
+# SP metrics). alpha is irrelevant to "interleave" -- omitted.
+name: interleave_300
+n_questions: 200
+seed: 0
+call_llm: true
+methods:
+  - name: interleave
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    strategy: interleave
+    budget_tokens: 300

@@ -1,0 +1,18 @@
+# Experiment 2-equivalent for adaptive-alpha: sweep the same 7 budgets used
+# for the fixed-alpha "Ours" (title_prefix_search/reranker_search), with the
+# Proxy Confidence Estimator recomputed per budget (S_sem/S_graph depend on
+# the budget, so need_graph does too). n=200 to match adaptive_alpha_300's
+# calibration sample; no LLM needed (SP metrics only).
+name: adaptive_alpha_budget_sweep
+n_questions: 200
+seed: 0
+call_llm: false
+include_candidates: false
+methods:
+  - name: adaptive_alpha
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    adaptive_alpha: true
+    base_alpha: 0.6
+    budget_tokens: [150, 200, 250, 300, 400, 500, 600]

@@ -1,0 +1,24 @@
+# Experiment 2 + 3: same-budget comparison (Recall@budget) and the
+# trade-off curve, computed from the same sweep. call_llm=false since
+# Supporting Fact Recall needs no LLM at all -- this sweep is free to re-run.
+name: budget_sweep
+n_questions: 200
+seed: 0
+call_llm: false
+methods:
+  - name: dense_rag
+    kind: dense_rag
+    budget_tokens: [100, 200, 300, 500, 800]
+  - name: fixed_1hop
+    kind: fixed_hop
+    hops: 1
+    budget_tokens: [100, 200, 300, 500, 800]
+  - name: fixed_2hop
+    kind: fixed_hop
+    hops: 2
+    budget_tokens: [100, 200, 300, 500, 800]
+  - name: ours
+    kind: selective_graph
+    max_hops: 2
+    alpha: 0.5
+    budget_tokens: [100, 200, 300, 500, 800]

@@ -1,0 +1,24 @@
+# Experiment 1: main comparison table. Fixed-hop baselines run unbounded
+# (full expansion, no pruning) to show the raw recall/context trade-off;
+# Dense RAG and Ours are both capped at the same token budget so the
+# central claim -- "Ours holds near 2-hop recall at far less context" --
+# is visible in one table.
+name: main_comparison
+n_questions: 200
+seed: 0
+call_llm: true
+methods:
+  - name: dense_rag
+    kind: dense_rag
+    budget_tokens: 300
+  - name: fixed_1hop
+    kind: fixed_hop
+    hops: 1
+  - name: fixed_2hop
+    kind: fixed_hop
+    hops: 2
+  - name: ours
+    kind: selective_graph
+    max_hops: 2
+    alpha: 0.5
+    budget_tokens: 300

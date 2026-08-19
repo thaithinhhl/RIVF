@@ -1,0 +1,14 @@
+# Random-pruning sanity check with title-prefixed embedding active (the
+# final kept pipeline state) at budget=600 -- completes the ablation table;
+# semantic-only/graph-only/blend at budget=600 already covered by
+# title_prefix_search.jsonl's alpha=[0,...,1] sweep.
+name: ablation_final
+n_questions: 200
+seed: 0
+call_llm: false
+methods:
+  - name: random_pruning
+    kind: selective_graph
+    max_hops: 2
+    strategy: random
+    budget_tokens: 600

@@ -1,0 +1,22 @@
+# Checks whether filtering entity_overlap edges to distinctive entities only
+# (appearing in <=3 of the question's 10 passages) improves SP Recall, on
+# top of title-prefixed embedding. Compare against title_prefix_search.jsonl.
+name: entity_freq_filter_search
+n_questions: 200
+seed: 0
+call_llm: false
+include_candidates: false
+methods:
+  - name: fixed_1hop
+    kind: fixed_hop
+    hops: 1
+    budget_tokens: [100, 150, 200, 250, 300, 400, 500, 600, 700, 800]
+  - name: fixed_2hop
+    kind: fixed_hop
+    hops: 2
+    budget_tokens: [100, 150, 200, 250, 300, 400, 500, 600, 700, 800]
+  - name: ours
+    kind: selective_graph
+    max_hops: 2
+    alpha: [0.0, 0.2, 0.4, 0.5, 0.6, 0.8, 1.0]
+    budget_tokens: [100, 150, 200, 250, 300, 400, 500, 600, 700, 800]

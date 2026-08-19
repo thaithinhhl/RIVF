@@ -1,0 +1,16 @@
+# Checks whether cross-encoder reranking (BAAI/bge-reranker-v2-m3, already
+# locally cached) improves SP Recall over bi-encoder semantic_score,
+# focused on the tight-budget regime (300 tokens is the target) but
+# covering a wider range for context. No LLM needed.
+name: reranker_search
+n_questions: 1000
+seed: 0
+call_llm: false
+include_candidates: false
+methods:
+  - name: ours_reranked
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    alpha: [0.0, 0.2, 0.4, 0.5, 0.6, 0.8, 1.0]
+    budget_tokens: [150, 200, 250, 300, 350, 400, 500, 600]

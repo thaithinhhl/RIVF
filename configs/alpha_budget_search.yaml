@@ -1,0 +1,28 @@
+# Dense grid search to find the strongest (alpha, budget) operating point for
+# "ours" before committing to final numbers. No LLM needed (SP Recall/F1 only)
+# -- candidates are computed once per question per method and re-sliced across
+# the whole grid, so this is cheap even though it's a wide sweep. Baselines are
+# included at the same budget grid too, for a finer-resolution trade-off curve
+# than budget_sweep.yaml's original 5 points.
+name: alpha_budget_search
+n_questions: 200
+seed: 0
+call_llm: false
+include_candidates: false
+methods:
+  - name: dense_rag
+    kind: dense_rag
+    budget_tokens: [100, 150, 200, 250, 300, 400, 500, 600, 700, 800]
+  - name: fixed_1hop
+    kind: fixed_hop
+    hops: 1
+    budget_tokens: [100, 150, 200, 250, 300, 400, 500, 600, 700, 800]
+  - name: fixed_2hop
+    kind: fixed_hop
+    hops: 2
+    budget_tokens: [100, 150, 200, 250, 300, 400, 500, 600, 700, 800]
+  - name: ours
+    kind: selective_graph
+    max_hops: 2
+    alpha: [0.0, 0.2, 0.4, 0.5, 0.6, 0.8, 1.0]
+    budget_tokens: [100, 150, 200, 250, 300, 400, 500, 600, 700, 800]

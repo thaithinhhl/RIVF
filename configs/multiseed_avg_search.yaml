@@ -1,0 +1,14 @@
+# Same as multiseed_search.yaml but with graph_score averaged (not summed)
+# across seeds -- fixes the scale-explosion bug found in the summed version
+# while keeping the "richer than single-nearest-seed" idea.
+name: multiseed_avg_search
+n_questions: 200
+seed: 0
+call_llm: false
+include_candidates: false
+methods:
+  - name: ours
+    kind: selective_graph
+    max_hops: 2
+    alpha: [0.0, 0.2, 0.4, 0.5, 0.6, 0.8, 1.0]
+    budget_tokens: [300, 500, 600, 700, 800]

@@ -1,0 +1,26 @@
+# Checks whether multi-seed aggregated graph_score (sum over all seeds
+# instead of nearest-seed-only) improves SP Recall over the original,
+# already-validated single-seed version -- same alpha/budget grid as
+# alpha_budget_search.yaml for direct comparability. No LLM needed.
+name: multiseed_search
+n_questions: 200
+seed: 0
+call_llm: false
+include_candidates: false
+methods:
+  - name: dense_rag
+    kind: dense_rag
+    budget_tokens: [100, 150, 200, 250, 300, 400, 500, 600, 700, 800]
+  - name: fixed_1hop
+    kind: fixed_hop
+    hops: 1
+    budget_tokens: [100, 150, 200, 250, 300, 400, 500, 600, 700, 800]
+  - name: fixed_2hop
+    kind: fixed_hop
+    hops: 2
+    budget_tokens: [100, 150, 200, 250, 300, 400, 500, 600, 700, 800]
+  - name: ours
+    kind: selective_graph
+    max_hops: 2
+    alpha: [0.0, 0.2, 0.4, 0.5, 0.6, 0.8, 1.0]
+    budget_tokens: [100, 150, 200, 250, 300, 400, 500, 600, 700, 800]

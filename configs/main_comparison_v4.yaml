@@ -1,0 +1,22 @@
+# Isolates the effect of weighted-path GraphRel alone: bge-m3 embeddings
+# (reverted, same as v1/v2) + weighted_shortest_distances (kept from the
+# qwen experiment) -- controls for the embedding-model confound found in v3.
+name: main_comparison_v4
+n_questions: 200
+seed: 0
+call_llm: true
+methods:
+  - name: dense_rag
+    kind: dense_rag
+    budget_tokens: 600
+  - name: fixed_1hop
+    kind: fixed_hop
+    hops: 1
+  - name: fixed_2hop
+    kind: fixed_hop
+    hops: 2
+  - name: ours
+    kind: selective_graph
+    max_hops: 2
+    alpha: 0.6
+    budget_tokens: 600

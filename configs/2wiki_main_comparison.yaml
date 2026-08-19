@@ -1,0 +1,23 @@
+# Generalization check: same operating point (alpha=0.6, budget=600) found
+# on HotpotQA, applied unchanged to 2WikiMultiHopQA -- re-tuning per dataset
+# would defeat the point of a generalization test.
+name: 2wiki_main_comparison
+dataset: data/raw/2wikimultihopqa_dev.json
+n_questions: 200
+seed: 0
+call_llm: true
+methods:
+  - name: dense_rag
+    kind: dense_rag
+    budget_tokens: 600
+  - name: fixed_1hop
+    kind: fixed_hop
+    hops: 1
+  - name: fixed_2hop
+    kind: fixed_hop
+    hops: 2
+  - name: ours
+    kind: selective_graph
+    max_hops: 2
+    alpha: 0.6
+    budget_tokens: 600

@@ -1,0 +1,20 @@
+# Full rebuild per the user-specified design: PPR instead of 1/(1+hop) for
+# GraphRel, bi-encoder cosine instead of cross-encoder reranker for
+# Semantic, fixed node-count pruning (top_k) instead of token-budget
+# pruning, and a continuous (not binary-switch) adaptive alpha. top_k=9
+# chosen to match "Ours"'s average selected-sentence count at budget=300
+# (~8.5) for a comparable operating point. n=200 matches the
+# adaptive-alpha calibration sample for a first read.
+name: rebuilt_pipeline_ppr
+n_questions: 200
+seed: 0
+call_llm: true
+methods:
+  - name: rebuilt
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: false
+    graph_rel_method: ppr
+    adaptive_alpha: continuous
+    base_alpha: 0.6
+    top_k: 9

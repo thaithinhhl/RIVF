@@ -1,0 +1,20 @@
+# Re-test the budget/alpha operating point found by the grid search
+# (alpha_budget_search.yaml): alpha=0.6, budget=600 showed the largest
+# recall margin over same-budget baselines (+0.0098 vs the original
+# alpha=0.5/budget=300's +0.0017). Only dense_rag and ours are re-run with
+# the LLM here -- fixed_1hop/fixed_2hop are unchanged (unbounded, same
+# graph) from main_comparison.yaml, so their existing LLM-scored rows are
+# reused rather than re-calling the API for identical prompts.
+name: main_comparison_v2
+n_questions: 200
+seed: 0
+call_llm: true
+methods:
+  - name: dense_rag
+    kind: dense_rag
+    budget_tokens: 600
+  - name: ours
+    kind: selective_graph
+    max_hops: 2
+    alpha: 0.6
+    budget_tokens: 600

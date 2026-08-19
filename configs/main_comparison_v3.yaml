@@ -1,0 +1,24 @@
+# Same design as main_comparison_v2 (alpha=0.6, budget=600) but re-run under
+# a new name -- the pipeline underneath changed (qwen3-embedding:0.6b via
+# Ollama instead of bge-m3, weighted shortest-path GraphRel instead of raw
+# hop count), and reusing the old config name would make the resume logic
+# wrongly skip every row as "already done" against stale results.
+name: main_comparison_v3
+n_questions: 200
+seed: 0
+call_llm: true
+methods:
+  - name: dense_rag
+    kind: dense_rag
+    budget_tokens: 600
+  - name: fixed_1hop
+    kind: fixed_hop
+    hops: 1
+  - name: fixed_2hop
+    kind: fixed_hop
+    hops: 2
+  - name: ours
+    kind: selective_graph
+    max_hops: 2
+    alpha: 0.6
+    budget_tokens: 600

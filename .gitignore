@@ -1,0 +1,10 @@
+.venv/
+.venv-hipporag/
+.env
+data/raw/
+data/processed/
+data/hipporag_cache/
+results/
+__pycache__/
+*.pyc
+.pytest_cache/

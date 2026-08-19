@@ -1,0 +1,22 @@
+# Quick, LLM-free check: does "rrf" pruning strategy improve SP Recall over
+# "topk" (raw weighted-sum combined_score) at the same alpha/budget grid?
+# Compares directly against the validated best point (alpha=0.6, budget=600)
+# plus a few neighbors, before spending any LLM budget on it.
+name: rrf_search
+n_questions: 200
+seed: 0
+call_llm: false
+include_candidates: false
+methods:
+  - name: ours_topk
+    kind: selective_graph
+    max_hops: 2
+    strategy: topk
+    alpha: [0.0, 0.2, 0.4, 0.5, 0.6, 0.8, 1.0]
+    budget_tokens: [300, 500, 600, 700, 800]
+  - name: ours_rrf
+    kind: selective_graph
+    max_hops: 2
+    strategy: rrf
+    alpha: [0.0, 0.2, 0.4, 0.5, 0.6, 0.8, 1.0]
+    budget_tokens: [300, 500, 600, 700, 800]

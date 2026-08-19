@@ -1,0 +1,15 @@
+# Random-pruning sanity check at the new budget=600 operating point --
+# semantic-only/graph-only/full-method-alpha-sweep at budget=600 are already
+# covered by alpha_budget_search.yaml's alpha=[0.0,...,1.0] sweep, so only
+# the random-strategy variant needs a fresh (cheap, no-LLM) run to complete
+# a consistent ablation table at the new budget.
+name: ablation_v2
+n_questions: 200
+seed: 0
+call_llm: false
+methods:
+  - name: random_pruning
+    kind: selective_graph
+    max_hops: 2
+    strategy: random
+    budget_tokens: 600

@@ -1,0 +1,15 @@
+# Random-pruning at budget=300 -- reranker-independent (the "random"
+# strategy ignores semantic_score/graph_score entirely, just shuffles the
+# same candidate pool), so this is valid regardless of use_reranker.
+# Completes the ablation table alongside reranker_search.jsonl's alpha
+# sweep at budget=300.
+name: ablation_reranked_300
+n_questions: 1000
+seed: 0
+call_llm: false
+methods:
+  - name: random_pruning
+    kind: selective_graph
+    max_hops: 2
+    strategy: random
+    budget_tokens: 300

@@ -1,0 +1,19 @@
+# Tests the Proxy Confidence Estimator (retrieval/adaptive_alpha.py):
+# alpha computed per question (base_alpha=0.6, or LOW_ALPHA=0.2 when the
+# proxy's need_graph signal crosses the calibrated threshold) instead of one
+# fixed alpha for the whole dataset. Same 200-question dev sample used to
+# calibrate the threshold (version1.md sec. 6b/6c) -- a held-out sample
+# would be needed before trusting this beyond a first read, but n=200 keeps
+# this a quick check, matching the interleave experiment's scope.
+name: adaptive_alpha_300
+n_questions: 200
+seed: 0
+call_llm: true
+methods:
+  - name: adaptive_alpha
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    adaptive_alpha: true
+    base_alpha: 0.6
+    budget_tokens: 300

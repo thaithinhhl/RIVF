@@ -1,0 +1,17 @@
+# Checks whether MMR (diversity-aware selection) improves SP Recall over
+# topk specifically in the tight-budget regime (300 tokens is the user's
+# target), where redundant top-scored candidates can crowd out the other
+# hop of a multi-hop question. Compares against title_prefix_search.jsonl
+# (topk, same grid). No LLM needed.
+name: mmr_search
+n_questions: 200
+seed: 0
+call_llm: false
+include_candidates: false
+methods:
+  - name: ours_mmr
+    kind: selective_graph
+    max_hops: 2
+    strategy: mmr
+    alpha: [0.0, 0.2, 0.4, 0.5, 0.6, 0.8, 1.0]
+    budget_tokens: [150, 200, 250, 300, 350, 400, 500, 600]

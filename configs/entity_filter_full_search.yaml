@@ -1,0 +1,26 @@
+# Full alpha/budget grid search with entity-frequency-filtered graph +
+# title-prefixed embedding both active, to find the new optimal operating
+# point now that the graph signal has changed. Same grid as
+# alpha_budget_search.yaml for direct comparability.
+name: entity_filter_full_search
+n_questions: 200
+seed: 0
+call_llm: false
+include_candidates: false
+methods:
+  - name: dense_rag
+    kind: dense_rag
+    budget_tokens: [100, 150, 200, 250, 300, 400, 500, 600, 700, 800]
+  - name: fixed_1hop
+    kind: fixed_hop
+    hops: 1
+    budget_tokens: [100, 150, 200, 250, 300, 400, 500, 600, 700, 800]
+  - name: fixed_2hop
+    kind: fixed_hop
+    hops: 2
+    budget_tokens: [100, 150, 200, 250, 300, 400, 500, 600, 700, 800]
+  - name: ours
+    kind: selective_graph
+    max_hops: 2
+    alpha: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+    budget_tokens: [100, 150, 200, 250, 300, 400, 500, 600, 700, 800]

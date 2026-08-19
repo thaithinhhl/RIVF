@@ -1,0 +1,11 @@
+# Core deps (torch/transformers/sentence-transformers/networkx/scikit-learn/openai
+# are already present in the base pyenv 3.12.4 environment; this venv was created
+# with --system-site-packages so they're reused, not re-downloaded).
+spacy>=3.7
+tiktoken>=0.7
+python-dotenv>=1.0
+pyyaml>=6.0
+pandas>=2.2
+matplotlib>=3.9
+pytest>=8.0
+tqdm>=4.66

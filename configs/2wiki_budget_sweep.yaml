@@ -1,0 +1,25 @@
+# Experiment 2 + 3 on 2WikiMultiHopQA -- same budget grid as HotpotQA's
+# alpha_budget_search.yaml for direct comparability. No LLM needed.
+name: 2wiki_budget_sweep
+dataset: data/raw/2wikimultihopqa_dev.json
+n_questions: 200
+seed: 0
+call_llm: false
+include_candidates: false
+methods:
+  - name: dense_rag
+    kind: dense_rag
+    budget_tokens: [100, 150, 200, 250, 300, 400, 500, 600, 700, 800]
+  - name: fixed_1hop
+    kind: fixed_hop
+    hops: 1
+    budget_tokens: [100, 150, 200, 250, 300, 400, 500, 600, 700, 800]
+  - name: fixed_2hop
+    kind: fixed_hop
+    hops: 2
+    budget_tokens: [100, 150, 200, 250, 300, 400, 500, 600, 700, 800]
+  - name: ours
+    kind: selective_graph
+    max_hops: 2
+    alpha: 0.6
+    budget_tokens: [100, 150, 200, 250, 300, 400, 500, 600, 700, 800]

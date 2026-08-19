@@ -1,0 +1,17 @@
+# Final validation: cross-encoder reranking enabled for "Ours" at
+# budget=300/alpha=0.6 (kept fixed per earlier decision). Dense RAG and
+# Fixed 1-hop/2-hop are unaffected by this change (reranker only touches
+# generate_candidates, which only "Ours"/fixed_hop use, and fixed_hop's
+# config here doesn't enable it) -- their existing v6/v7 rows are reused
+# instead of re-calling the LLM for identical prompts.
+name: main_comparison_v8_reranked
+n_questions: 1000
+seed: 0
+call_llm: true
+methods:
+  - name: ours
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    alpha: 0.6
+    budget_tokens: 300
