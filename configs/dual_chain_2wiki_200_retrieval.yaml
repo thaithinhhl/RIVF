@@ -1,0 +1,61 @@
+# Two-chain set-packing ablation for bridge-comparison questions on the same
+# 2Wiki n=200 sample. All policies are label-free and hard-capped at 200 tokens.
+name: dual_chain_2wiki_200_retrieval
+dataset: data/raw/2wikimultihopqa_dev.json
+n_questions: 200
+seed: 0
+call_llm: false
+include_candidates: false
+methods:
+  - name: routed_dual_w010
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    conditional_rerank: true
+    conditional_anchor_n: 1
+    bridge_anchor_n: 2
+    bridge_policy: dual_chain
+    strategy: routed_topk
+    conditional_weight: 0.10
+    alpha: 1.0
+    budget_tokens: 200
+  - name: routed_dual_w020
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    conditional_rerank: true
+    conditional_anchor_n: 1
+    bridge_anchor_n: 2
+    bridge_policy: dual_chain
+    strategy: routed_topk
+    conditional_weight: 0.20
+    alpha: 1.0
+    budget_tokens: 200
+  - name: routed_dual_w030
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    conditional_rerank: true
+    conditional_anchor_n: 1
+    bridge_anchor_n: 2
+    bridge_policy: dual_chain
+    strategy: routed_topk
+    conditional_weight: 0.30
+    alpha: 1.0
+    budget_tokens: 200
+  - name: routed_dual_w040
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    conditional_rerank: true
+    conditional_anchor_n: 1
+    bridge_anchor_n: 2
+    bridge_policy: dual_chain
+    strategy: routed_topk
+    conditional_weight: 0.40
+    alpha: 1.0
+    budget_tokens: 200

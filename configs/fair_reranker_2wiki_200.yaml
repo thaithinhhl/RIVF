@@ -1,0 +1,39 @@
+# Final-pipeline generalization check on 2WikiMultiHopQA. It mirrors the
+# controlled HotpotQA experiment exactly: same sample size, seed, methods,
+# reranker, alpha, token budget, and answer model.
+name: fair_reranker_2wiki_200
+dataset: data/raw/2wikimultihopqa_dev.json
+n_questions: 200
+seed: 0
+call_llm: true
+llm_model: gpt-4o-mini
+include_candidates: false
+methods:
+  - name: dense_bi
+    kind: dense_rag
+    budget_tokens: 300
+  - name: dense_ce
+    kind: dense_rag
+    use_reranker: true
+    budget_tokens: 300
+  - name: fixed_1hop_ce
+    kind: fixed_hop
+    hops: 1
+    use_reranker: true
+    budget_tokens: 300
+  - name: fixed_2hop_ce
+    kind: fixed_hop
+    hops: 2
+    use_reranker: true
+    budget_tokens: 300
+  - name: ours_bi
+    kind: selective_graph
+    max_hops: 2
+    alpha: 0.6
+    budget_tokens: 300
+  - name: ours_ce
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    alpha: 0.6
+    budget_tokens: 300

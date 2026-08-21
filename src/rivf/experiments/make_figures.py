@@ -80,6 +80,28 @@ def ablation_table() -> pd.DataFrame:
     return combined.groupby(["method", "alpha"], dropna=False)[cols].mean().round(3)
 
 
+def controlled_comparison_table(dataset: str) -> pd.DataFrame:
+    """Fair n=200 table where every CE variant uses the same reranker/budget."""
+    experiment = {
+        "hotpot": "fair_reranker_hotpot_200",
+        "2wiki": "fair_reranker_2wiki_200",
+    }[dataset]
+    data = _load(experiment)
+    cols = ["sp_recall", "sp_prec", "sp_f1", "em", "f1", "context_tokens", "num_selected"]
+    return data.groupby("method")[cols].mean().round(3)
+
+
+def controlled_alpha_table(dataset: str) -> pd.DataFrame:
+    """Final-pipeline alpha ablation transferred unchanged across datasets."""
+    experiment = {
+        "hotpot": "fair_alpha_hotpot_200",
+        "2wiki": "fair_alpha_2wiki_200",
+    }[dataset]
+    data = _load(experiment)
+    cols = ["sp_recall", "sp_prec", "sp_f1", "context_tokens", "num_selected"]
+    return data.groupby("alpha")[cols].mean().round(3)
+
+
 def tradeoff_curve() -> Path:
     """Experiment 3: Supporting Fact Recall vs. context tokens, cropped to
     the evenly-swept 100-600 token range (the budget grid every method was
@@ -146,3 +168,8 @@ if __name__ == "__main__":
     print(main_comparison_table().to_string())
     print("\nAblation table:")
     print(ablation_table().to_string())
+    for dataset in ("hotpot", "2wiki"):
+        print(f"\nControlled comparison ({dataset}, n=200):")
+        print(controlled_comparison_table(dataset).to_string())
+        print(f"\nControlled alpha ablation ({dataset}, n=200):")
+        print(controlled_alpha_table(dataset).to_string())

@@ -9,6 +9,9 @@ from rivf.retrieval.pruning import prune
 # signals available at inference time (no gold) to approximate that label.
 NEED_GRAPH_THRESHOLD = 0.36
 LOW_ALPHA = 0.2
+SEMANTIC_FIRST_HIGH_ALPHA = 1.0
+SEMANTIC_FIRST_MID_ALPHA = 0.7
+SEMANTIC_FIRST_LOW_ALPHA = 0.4
 
 
 def _need_graph_score(
@@ -88,3 +91,76 @@ def estimate_alpha_continuous(
         return base_alpha
     need_graph = _need_graph_score(candidates, budget_tokens, top_k)
     return max(min_alpha, min(max_alpha, base_alpha - need_graph))
+
+
+def semantic_first_signals(candidates: list[Candidate], proxy_k: int = 6) -> dict[str, float]:
+    """Inference-safe features for a conservative PPR rescue gate.
+
+    Thresholds were chosen from a 200-question HotpotQA diagnostic where PPR
+    only beat random at tight Top-6 selection. The gate therefore starts at
+    semantic-only and lowers alpha only when a question resembles the small
+    PPR-rescued group: high ranking disagreement, weaker semantic confidence,
+    and semantic omission of structurally central seed nodes.
+    """
+    if not candidates:
+        return {
+            "disagreement": 0.0,
+            "semantic_top2_mean": 1.0,
+            "semantic_kth_score": 1.0,
+            "ppr_concentration": 0.0,
+            "seed_miss_fraction": 0.0,
+        }
+    k = min(proxy_k, len(candidates))
+    semantic_order = sorted(candidates, key=lambda c: c.semantic_score or 0.0, reverse=True)
+    graph_order = sorted(
+        candidates,
+        key=lambda c: (c.graph_score or 0.0, c.semantic_score or 0.0),
+        reverse=True,
+    )
+    semantic_keys = {c.sentence.key for c in semantic_order[:k]}
+    graph_keys = {c.sentence.key for c in graph_order[:k]}
+    union = semantic_keys | graph_keys
+    jaccard = len(semantic_keys & graph_keys) / len(union) if union else 1.0
+    top2 = semantic_order[:2]
+    top2_mean = sum(c.semantic_score or 0.0 for c in top2) / len(top2)
+    graph_values = sorted((c.graph_score or 0.0 for c in candidates), reverse=True)
+    median_graph = graph_values[len(graph_values) // 2]
+    seeds = [c for c in candidates if c.hop_distance == 0]
+    seed_miss = (
+        sum(c.sentence.key not in semantic_keys for c in seeds) / len(seeds) if seeds else 0.0
+    )
+    return {
+        "disagreement": 1.0 - jaccard,
+        "semantic_top2_mean": top2_mean,
+        "semantic_kth_score": semantic_order[k - 1].semantic_score or 0.0,
+        "ppr_concentration": graph_values[0] - median_graph,
+        "seed_miss_fraction": seed_miss,
+    }
+
+
+def estimate_alpha_semantic_first(candidates: list[Candidate], proxy_k: int = 6) -> float:
+    """Choose alpha from {1.0, 0.7, 0.4}, defaulting to semantic-only.
+
+    This reverses the failed continuous estimator's behavior: graph evidence
+    is a targeted rescue signal, never the default majority signal.
+    """
+    if not candidates:
+        return SEMANTIC_FIRST_HIGH_ALPHA
+    signals = semantic_first_signals(candidates, proxy_k=proxy_k)
+    if (
+        signals["disagreement"] >= 0.60
+        and signals["seed_miss_fraction"] >= 0.40
+        and signals["semantic_top2_mean"] < 0.90
+        and signals["ppr_concentration"] >= 0.65
+    ):
+        return SEMANTIC_FIRST_LOW_ALPHA
+    if (
+        signals["disagreement"] >= 0.50
+        and signals["semantic_kth_score"] < 0.30
+        and (
+            signals["seed_miss_fraction"] >= 0.20
+            or signals["semantic_top2_mean"] < 0.85
+        )
+    ):
+        return SEMANTIC_FIRST_MID_ALPHA
+    return SEMANTIC_FIRST_HIGH_ALPHA

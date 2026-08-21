@@ -1,0 +1,24 @@
+# Answer-quality validation for the retrieval-selected v2 operating point.
+# The fixed-2-hop CE baseline on the same 200 seeded questions already exists
+# in fair_reranker_hotpot_200, so only the new method incurs LLM calls here.
+name: adaptive_ppr_v2_hotpot_200_llm
+dataset: data/raw/hotpot_dev_distractor_v1.json
+n_questions: 200
+seed: 0
+call_llm: true
+llm_model: gpt-4o-mini
+include_candidates: false
+methods:
+  - name: adaptive_mass_050
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    strategy: adaptive_mass
+    adaptive_alpha: semantic_first
+    proxy_k: 6
+    mass_threshold: 0.50
+    mass_temperature: 0.15
+    min_nodes: 4
+    path_closure: true
+    budget_tokens: 300

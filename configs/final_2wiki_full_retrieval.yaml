@@ -1,0 +1,38 @@
+# Full 2WikiMultiHopQA dev retrieval evaluation. Baselines may use 600
+# selected-evidence tokens; QA-mode Ours remains hard-capped at 200.
+name: final_2wiki_full_retrieval
+dataset: data/raw/2wikimultihopqa_dev.json
+n_questions: 12576
+seed: 0
+call_llm: false
+include_candidates: false
+methods:
+  - name: dense_bi_600
+    kind: dense_rag
+    budget_tokens: 600
+  - name: dense_ce_600
+    kind: dense_rag
+    use_reranker: true
+    budget_tokens: 600
+  - name: graph_1hop_ce_600
+    kind: fixed_hop
+    hops: 1
+    use_reranker: true
+    budget_tokens: 600
+  - name: graph_2hop_ce_600
+    kind: fixed_hop
+    hops: 2
+    use_reranker: true
+    budget_tokens: 600
+  - name: ours_qa_200
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    conditional_rerank: true
+    conditional_anchor_n: 1
+    bridge_policy: single_chain
+    strategy: routed_topk
+    conditional_weight: 0.30
+    alpha: 1.0
+    budget_tokens: 200

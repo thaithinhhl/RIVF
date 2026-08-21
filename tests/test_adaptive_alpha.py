@@ -1,6 +1,12 @@
 from rivf.data.schema import Sentence
 from rivf.methods.base import Candidate
-from rivf.retrieval.adaptive_alpha import LOW_ALPHA, estimate_alpha
+from rivf.retrieval.adaptive_alpha import (
+    LOW_ALPHA,
+    SEMANTIC_FIRST_HIGH_ALPHA,
+    SEMANTIC_FIRST_LOW_ALPHA,
+    estimate_alpha,
+    estimate_alpha_semantic_first,
+)
 
 
 def _candidate(title: str, sent_id: int, text: str, semantic: float, graph: float, hop: int) -> Candidate:
@@ -37,3 +43,25 @@ def test_estimate_alpha_returns_low_alpha_when_semantic_is_unconfident_and_disag
 
 def test_estimate_alpha_handles_empty_candidates():
     assert estimate_alpha([], base_alpha=0.6) == 0.6
+
+
+def test_semantic_first_estimator_defaults_to_semantic_for_empty_pool():
+    assert estimate_alpha_semantic_first([]) == SEMANTIC_FIRST_HIGH_ALPHA
+
+
+def test_semantic_first_estimator_only_uses_low_alpha_for_strong_rescue_pattern():
+    candidates = []
+    semantic = [0.80, 0.75, 0.50, 0.40, 0.25, 0.20, 0.10, 0.08, 0.06, 0.04]
+    graph = [0.01, 0.02, 0.03, 0.04, 0.20, 0.60, 0.70, 0.80, 0.90, 1.00]
+    for index, (sem, rel) in enumerate(zip(semantic, graph)):
+        candidates.append(
+            _candidate(
+                f"P{index}",
+                0,
+                str(index),
+                semantic=sem,
+                graph=rel,
+                hop=0 if index >= 5 else 1,
+            )
+        )
+    assert estimate_alpha_semantic_first(candidates, proxy_k=6) == SEMANTIC_FIRST_LOW_ALPHA

@@ -1,0 +1,14 @@
+# Controlled alpha ablation with the final cross-encoder and 300-token budget.
+name: fair_alpha_hotpot_200
+dataset: data/raw/hotpot_dev_distractor_v1.json
+n_questions: 200
+seed: 0
+call_llm: false
+include_candidates: false
+methods:
+  - name: graph_expansion_ce
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    alpha: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
+    budget_tokens: 300

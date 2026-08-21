@@ -1,0 +1,24 @@
+name: graph_gated_rescue_2wiki_200_llm
+dataset: data/raw/2wikimultihopqa_dev.json
+n_questions: 200
+seed: 0
+call_llm: true
+llm_model: gpt-4o-mini
+include_candidates: false
+methods:
+  - name: graph_gated_rescue_w020
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    query_weighted_ppr: true
+    ppr_seed_temperature: 0.20
+    conditional_rerank: true
+    conditional_anchor_n: 1
+    bridge_policy: single_chain
+    strategy: routed_graph_rescue
+    conditional_weight: 0.30
+    graph_rescue_weight: 0.20
+    graph_rescue_k: 6
+    alpha: 1.0
+    budget_tokens: 200

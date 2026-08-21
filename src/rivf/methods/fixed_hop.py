@@ -15,14 +15,17 @@ class FixedHopRAG(Retriever):
     score within the hop-limited set before the token cutoff, since fixed-hop
     has no other natural internal ranking."""
 
-    def __init__(self, hops: int):
+    def __init__(self, hops: int, use_reranker: bool = False):
         self.hops = hops
+        self.use_reranker = use_reranker
 
     def retrieve(
         self, item: QAItem, alpha: float = 1.0, budget_tokens: int | None = None
     ) -> RetrievalResult:
         start = time.perf_counter()
-        candidates = generate_candidates(item, max_hops=self.hops)
+        candidates = generate_candidates(
+            item, max_hops=self.hops, use_reranker=self.use_reranker
+        )
         selected = prune(candidates, alpha=1.0, strategy="topk", budget_tokens=budget_tokens)
         tokens = sum(count_tokens(s.text) for s in selected)
         return RetrievalResult(

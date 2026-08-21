@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Evidence-Efficient Multi-Hop QA Pipeline</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --paper: #ffffff;
+      --ink: #172033;
+      --muted: #637086;
+      --line: #cad3e1;
+      --blue: #2563eb;
+      --blue-soft: #e8f0ff;
+      --violet: #7c3aed;
+      --violet-soft: #f1eafe;
+      --green: #14835b;
+      --green-soft: #e4f7ef;
+      --orange: #d66b16;
+      --orange-soft: #fff0df;
+      --red: #c73d50;
+      --red-soft: #ffe9ed;
+      --shadow: 0 14px 40px rgba(32, 49, 78, .09);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 10% 0%, #dfeaff 0, transparent 28rem),
+        radial-gradient(circle at 95% 12%, #efe6ff 0, transparent 26rem),
+        var(--bg);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+        "Segoe UI", sans-serif;
+    }
+
+    main { width: min(1500px, calc(100% - 32px)); margin: 32px auto 56px; }
+
+    .hero {
+      padding: 28px 32px;
+      border: 1px solid #dce3ee;
+      border-radius: 24px;
+      background: rgba(255, 255, 255, .88);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(8px);
+    }
+
+    .eyebrow {
+      color: var(--blue);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+
+    h1 { margin: 8px 0 8px; font-size: clamp(27px, 4vw, 46px); line-height: 1.08; }
+    h2 { margin: 0 0 8px; font-size: 20px; }
+    p { margin: 0; color: var(--muted); line-height: 1.55; }
+
+    .claim {
+      display: inline-flex;
+      gap: 10px;
+      align-items: center;
+      margin-top: 18px;
+      padding: 10px 14px;
+      color: #0d5e42;
+      border: 1px solid #a8dec8;
+      border-radius: 999px;
+      background: var(--green-soft);
+      font-size: 14px;
+      font-weight: 750;
+    }
+
+    .diagram {
+      margin-top: 22px;
+      padding: 24px;
+      overflow-x: auto;
+      border: 1px solid #dce3ee;
+      border-radius: 24px;
+      background: rgba(255, 255, 255, .94);
+      box-shadow: var(--shadow);
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: 180px 34px 210px 34px 230px 34px 250px 34px 260px;
+      align-items: stretch;
+      min-width: 1350px;
+    }
+
+    .stage {
+      position: relative;
+      min-height: 520px;
+      padding: 15px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: #fbfcfe;
+    }
+
+    .stage-title {
+      margin-bottom: 4px;
+      font-size: 11px;
+      font-weight: 850;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+
+    .stage-sub { color: var(--muted); font-size: 12px; line-height: 1.35; }
+    .stage.blue { border-top: 5px solid var(--blue); }
+    .stage.violet { border-top: 5px solid var(--violet); }
+    .stage.orange { border-top: 5px solid var(--orange); }
+    .stage.green { border-top: 5px solid var(--green); }
+
+    .arrow {
+      display: grid;
+      place-items: center;
+      color: #8b98ab;
+      font-size: 27px;
+      font-weight: 300;
+    }
+
+    .card {
+      margin-top: 14px;
+      padding: 12px;
+      border: 1px solid #d8e0ec;
+      border-radius: 13px;
+      background: var(--paper);
+      box-shadow: 0 6px 14px rgba(38, 54, 82, .06);
+    }
+
+    .card strong { display: block; margin-bottom: 4px; font-size: 13px; }
+    .card small { display: block; color: var(--muted); line-height: 1.35; }
+    .question { border-color: #a8c0fb; background: var(--blue-soft); }
+    .output { border-color: #8fd0b8; background: var(--green-soft); }
+    .budget { border-color: #f0b67f; background: var(--orange-soft); }
+
+    .passage {
+      margin-top: 12px;
+      padding: 10px;
+      border-left: 4px solid var(--violet);
+      border-radius: 8px;
+      background: var(--violet-soft);
+      font-size: 11px;
+      line-height: 1.4;
+    }
+
+    .node-map { position: relative; height: 290px; margin-top: 14px; }
+    .edge { position: absolute; height: 2px; background: #aab6c8; transform-origin: left center; }
+    .edge.graph { height: 3px; background: #9e7ce5; }
+    .node {
+      position: absolute;
+      z-index: 2;
+      display: grid;
+      width: 44px;
+      height: 44px;
+      place-items: center;
+      border: 3px solid #fff;
+      border-radius: 50%;
+      color: #fff;
+      background: #8a97aa;
+      box-shadow: 0 3px 9px rgba(23, 32, 51, .22);
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .node.seed { background: var(--blue); }
+    .node.hop1 { background: var(--violet); }
+    .node.hop2 { background: var(--orange); }
+    .node.kept { outline: 4px solid #8ce0c0; }
+
+    .score-row { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 14px; }
+    .score {
+      padding: 12px 9px;
+      border-radius: 12px;
+      text-align: center;
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .score.sem { color: #164bad; background: var(--blue-soft); }
+    .score.graph { color: #6330ba; background: var(--violet-soft); }
+
+    .main-path {
+      margin-top: 12px;
+      padding: 11px;
+      border: 2px solid #7e9ff1;
+      border-radius: 14px;
+      background: #f4f7ff;
+    }
+
+    .main-path .tag, .ablation .tag {
+      display: inline-block;
+      margin-bottom: 7px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 850;
+      text-transform: uppercase;
+    }
+    .main-path .tag { color: #164bad; background: #dce8ff; }
+
+    .route {
+      margin-top: 8px;
+      padding: 9px;
+      border-radius: 10px;
+      background: #fff;
+      font-size: 11px;
+      line-height: 1.35;
+    }
+    .route b { display: block; margin-bottom: 2px; }
+
+    .ablation {
+      margin-top: 14px;
+      padding: 11px;
+      border: 2px dashed #c49870;
+      border-radius: 14px;
+      background: #fffaf5;
+      opacity: .86;
+    }
+    .ablation .tag { color: #92480d; background: #ffe4c8; }
+    .formula { margin-top: 7px; font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+    .token-bar {
+      position: relative;
+      height: 22px;
+      margin-top: 9px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #e8edf4;
+    }
+    .token-bar span {
+      display: block;
+      width: 33.33%;
+      height: 100%;
+      background: linear-gradient(90deg, var(--green), #4bb990);
+    }
+    .token-labels { display: flex; justify-content: space-between; margin-top: 4px; color: var(--muted); font-size: 10px; }
+
+    .legend, .notes {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-top: 18px;
+    }
+    .legend-item, .note {
+      padding: 12px 14px;
+      border: 1px solid #dce3ee;
+      border-radius: 14px;
+      background: #fff;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .dot { display: inline-block; width: 10px; height: 10px; margin-right: 7px; border-radius: 50%; }
+    .note strong { display: block; margin-bottom: 4px; color: var(--ink); }
+
+    @media (max-width: 900px) {
+      main { width: min(100% - 18px, 1500px); margin-top: 10px; }
+      .hero, .diagram { padding: 18px; border-radius: 18px; }
+      .legend, .notes { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header class="hero">
+    <div class="eyebrow">Current main method · QA mode</div>
+    <h1>Evidence-Efficient Graph Expansion</h1>
+    <p>Đồ thị mở rộng vùng tìm kiếm; cross-encoder và conditional chain scoring chọn evidence. Ours giữ tối đa 200 evidence tokens trước khi gọi LLM.</p>
+    <div class="claim">200 tokens Ours · 600 tokens baseline · HotpotQA + 2WikiMultiHopQA</div>
+  </header>
+
+  <section class="diagram" aria-label="Sơ đồ pipeline">
+    <div class="flow">
+      <article class="stage violet">
+        <div class="stage-title">01 · Input</div>
+        <div class="stage-sub">Corpus passages và câu hỏi</div>
+        <div class="card question">
+          <strong>Question q</strong>
+          <small>“Quốc tịch của đạo diễn phim X là gì?”</small>
+        </div>
+        <div class="passage"><b>Passage A · Film X</b><br>Film X was directed by A…</div>
+        <div class="passage"><b>Passage B · Person A</b><br>A is a French filmmaker…</div>
+        <div class="passage"><b>Passage C · Distractor</b><br>Unrelated information…</div>
+        <div class="card">
+          <strong>Sentence preparation</strong>
+          <small>Mỗi passage được tách thành sentence; node text dùng dạng <code>title: sentence</code>.</small>
+        </div>
+      </article>
+
+      <div class="arrow">→</div>
+
+      <article class="stage blue">
+        <div class="stage-title">02 · Seed retrieval</div>
+        <div class="stage-sub">BAAI/bge-m3 semantic similarity</div>
+        <div class="card">
+          <strong>Question ↔ tất cả sentence nodes</strong>
+          <small>Lấy các sentence gần câu hỏi nhất làm seed set S0.</small>
+        </div>
+        <div class="node-map" style="height:260px">
+          <span class="edge" style="left:37px;top:50px;width:100px;transform:rotate(21deg)"></span>
+          <span class="edge" style="left:37px;top:50px;width:116px;transform:rotate(76deg)"></span>
+          <span class="edge" style="left:135px;top:90px;width:74px;transform:rotate(107deg)"></span>
+          <span class="node seed" style="left:15px;top:27px">s1</span>
+          <span class="node seed" style="left:128px;top:68px">s2</span>
+          <span class="node seed" style="left:34px;top:153px">s3</span>
+          <span class="node" style="left:118px;top:171px">d1</span>
+          <span class="node" style="left:53px;top:211px">d2</span>
+        </div>
+        <div class="card question">
+          <strong>Output · S0</strong>
+          <small>Seed nodes; số lượng được điều khiển bởi cấu hình.</small>
+        </div>
+      </article>
+
+      <div class="arrow">→</div>
+
+      <article class="stage violet">
+        <div class="stage-title">03 · Graph expansion</div>
+        <div class="stage-sub">Candidate pool trong phạm vi ≤2-hop</div>
+        <div class="node-map">
+          <span class="edge graph" style="left:35px;top:58px;width:112px;transform:rotate(11deg)"></span>
+          <span class="edge graph" style="left:145px;top:78px;width:76px;transform:rotate(91deg)"></span>
+          <span class="edge" style="left:35px;top:58px;width:121px;transform:rotate(73deg)"></span>
+          <span class="edge graph" style="left:64px;top:169px;width:102px;transform:rotate(-5deg)"></span>
+          <span class="edge" style="left:145px;top:78px;width:92px;transform:rotate(145deg)"></span>
+          <span class="edge graph" style="left:165px;top:164px;width:72px;transform:rotate(87deg)"></span>
+          <span class="node seed" style="left:12px;top:35px">s</span>
+          <span class="node hop1 kept" style="left:125px;top:56px">h*</span>
+          <span class="node hop1" style="left:42px;top:146px">h1</span>
+          <span class="node hop2 kept" style="left:144px;top:143px">e*</span>
+          <span class="node hop2" style="left:150px;top:230px">e2</span>
+        </div>
+        <div class="card">
+          <strong>Ba loại cạnh</strong>
+          <small>Same-passage adjacency · entity overlap · title mention.</small>
+        </div>
+        <div class="card output">
+          <strong>Output · C</strong>
+          <small>Seeds + 1-hop + 2-hop sentence candidates.</small>
+        </div>
+      </article>
+
+      <div class="arrow">→</div>
+
+      <article class="stage orange">
+        <div class="stage-title">04 · Score + route</div>
+        <div class="stage-sub">Hai score được tính, main path dùng CE</div>
+        <div class="score-row">
+          <div class="score sem">Semantic<br>CE(q, v)</div>
+          <div class="score graph">GraphRel<br>PPR / hop</div>
+        </div>
+
+        <div class="main-path">
+          <span class="tag">Main QA path</span>
+          <div class="route"><b>Direct comparison</b>Semantic budget-fill; coverage bonus đang bằng 0.</div>
+          <div class="route"><b>Bridge / chained</b>Chọn anchor, rồi tính CE(q + anchor, endpoint).</div>
+          <div class="route"><b>Pair preservation</b>Endpoint được chọn kéo theo anchor tương ứng.</div>
+          <div class="formula">α = 1.0<br>base relevance = semantic</div>
+        </div>
+
+        <div class="ablation">
+          <span class="tag">Ablation · not main</span>
+          <div><b>S_sem</b> = Top-K semantic</div>
+          <div><b>S_graph</b> = Top-K GraphRel</div>
+          <div class="formula">disagreement → α(q)<br>α·Sem + (1−α)·Graph</div>
+        </div>
+      </article>
+
+      <div class="arrow">→</div>
+
+      <article class="stage green">
+        <div class="stage-title">05 · Compact context + answer</div>
+        <div class="stage-sub">Hard budget trước khi gọi LLM</div>
+        <div class="card budget">
+          <strong>Pair-aware pruning</strong>
+          <small>Giữ chain quan trọng, bỏ candidate nhiễu và không vượt 200 evidence tokens.</small>
+          <div class="token-bar"><span></span></div>
+          <div class="token-labels"><span>0</span><span>Ours 200</span><span>Baseline 600</span></div>
+        </div>
+        <div class="card output">
+          <strong>Selected compact subgraph</strong>
+          <small>Film X → directed by A → A is French</small>
+        </div>
+        <div class="card">
+          <strong>Prompt</strong>
+          <small>Instruction + question + evidence được group theo passage gốc.</small>
+        </div>
+        <div class="card question">
+          <strong>gpt-4o-mini</strong>
+          <small>temperature = 0</small>
+        </div>
+        <div class="card output">
+          <strong>Final answer</strong>
+          <small>“French.”</small>
+        </div>
+        <div class="card">
+          <strong>Evaluation</strong>
+          <small>SP R/P/F1 · Answer EM/F1 · evidence/prompt/output tokens · latency.</small>
+        </div>
+      </article>
+    </div>
+
+    <div class="legend">
+      <div class="legend-item"><span class="dot" style="background:var(--blue)"></span>Seed sentence node</div>
+      <div class="legend-item"><span class="dot" style="background:var(--violet)"></span>1-hop sentence node</div>
+      <div class="legend-item"><span class="dot" style="background:var(--orange)"></span>2-hop sentence node</div>
+      <div class="legend-item"><span class="dot" style="background:var(--green)"></span>Node được giữ trong context</div>
+    </div>
+  </section>
+
+  <section class="notes">
+    <div class="note"><strong>Node granularity</strong>Passage là nguồn dữ liệu; mỗi sentence mới là một graph node.</div>
+    <div class="note"><strong>Graph trong main method</strong>Giới hạn candidate pool và xác định anchor–endpoint, không chi phối ranking bằng PPR weight.</div>
+    <div class="note"><strong>Hai token concepts</strong>200 là evidence budget; total prompt tokens còn gồm question, instruction, title và format.</div>
+    <div class="note"><strong>Không dùng gold khi inference</strong>Gold supporting facts chỉ phục vụ metrics và oracle analysis.</div>
+  </section>
+</main>
+</body>
+</html>

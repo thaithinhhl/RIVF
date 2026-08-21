@@ -1,0 +1,25 @@
+# Final 2Wiki candidate: hybrid dual-chain selection plus chain-aware evidence
+# serialization and reasoning hint. Hard selected-evidence ceiling: 200 tokens.
+name: hybrid_dual_chain_2wiki_200_llm
+dataset: data/raw/2wikimultihopqa_dev.json
+n_questions: 200
+seed: 0
+call_llm: true
+llm_model: gpt-4o-mini
+include_candidates: false
+methods:
+  - name: ours_hybrid_dual_chain_200
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    conditional_rerank: true
+    conditional_anchor_n: 1
+    bridge_anchor_n: 2
+    bridge_policy: dual_chain
+    prefer_mentioned_anchors: true
+    strategy: routed_topk
+    conditional_weight: 0.40
+    chain_aware_prompt: true
+    alpha: 1.0
+    budget_tokens: 200

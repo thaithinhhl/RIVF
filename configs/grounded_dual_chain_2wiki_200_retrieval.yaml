@@ -1,0 +1,61 @@
+# Question-grounded dual-chain selector: explicit passage titles in the
+# question become anchors before semantic fallback. Hard ceiling: 200 tokens.
+name: grounded_dual_chain_2wiki_200_retrieval
+dataset: data/raw/2wikimultihopqa_dev.json
+n_questions: 200
+seed: 0
+call_llm: false
+include_candidates: false
+methods:
+  - name: grounded_dual_w020
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    conditional_rerank: true
+    conditional_anchor_n: 1
+    bridge_anchor_n: 2
+    bridge_policy: dual_chain
+    strategy: routed_topk
+    conditional_weight: 0.20
+    alpha: 1.0
+    budget_tokens: 200
+  - name: grounded_dual_w030
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    conditional_rerank: true
+    conditional_anchor_n: 1
+    bridge_anchor_n: 2
+    bridge_policy: dual_chain
+    strategy: routed_topk
+    conditional_weight: 0.30
+    alpha: 1.0
+    budget_tokens: 200
+  - name: grounded_dual_w040
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    conditional_rerank: true
+    conditional_anchor_n: 1
+    bridge_anchor_n: 2
+    bridge_policy: dual_chain
+    strategy: routed_topk
+    conditional_weight: 0.40
+    alpha: 1.0
+    budget_tokens: 200
+  - name: grounded_dual_w050
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    conditional_rerank: true
+    conditional_anchor_n: 1
+    bridge_anchor_n: 2
+    bridge_policy: dual_chain
+    strategy: routed_topk
+    conditional_weight: 0.50
+    alpha: 1.0
+    budget_tokens: 200

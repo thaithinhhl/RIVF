@@ -1,0 +1,23 @@
+# Answer-quality validation for retrieval-selected dual-chain Ours on the
+# same 2Wiki n=200 sample. Existing 600-token baselines are reused by QID.
+name: dual_chain_2wiki_200_llm
+dataset: data/raw/2wikimultihopqa_dev.json
+n_questions: 200
+seed: 0
+call_llm: true
+llm_model: gpt-4o-mini
+include_candidates: false
+methods:
+  - name: ours_dual_chain_200
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    conditional_rerank: true
+    conditional_anchor_n: 1
+    bridge_anchor_n: 2
+    bridge_policy: dual_chain
+    strategy: routed_topk
+    conditional_weight: 0.40
+    alpha: 1.0
+    budget_tokens: 200

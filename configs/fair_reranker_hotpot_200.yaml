@@ -1,0 +1,38 @@
+# Controlled 200-question comparison. Every method uses the same 300-token
+# budget; CE variants share the exact BAAI/bge-reranker-v2-m3 cross-encoder.
+name: fair_reranker_hotpot_200
+dataset: data/raw/hotpot_dev_distractor_v1.json
+n_questions: 200
+seed: 0
+call_llm: true
+llm_model: gpt-4o-mini
+include_candidates: false
+methods:
+  - name: dense_bi
+    kind: dense_rag
+    budget_tokens: 300
+  - name: dense_ce
+    kind: dense_rag
+    use_reranker: true
+    budget_tokens: 300
+  - name: fixed_1hop_ce
+    kind: fixed_hop
+    hops: 1
+    use_reranker: true
+    budget_tokens: 300
+  - name: fixed_2hop_ce
+    kind: fixed_hop
+    hops: 2
+    use_reranker: true
+    budget_tokens: 300
+  - name: ours_bi
+    kind: selective_graph
+    max_hops: 2
+    alpha: 0.6
+    budget_tokens: 300
+  - name: ours_ce
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    alpha: 0.6
+    budget_tokens: 300

@@ -17,6 +17,10 @@ class Candidate:
     graph_score: float | None = None  # GraphRel(v): e.g. inverse hop-distance from seed
     hop_distance: int | None = None  # 0 = seed, 1, 2, ...; None where not applicable
     embedding: np.ndarray | None = None  # cached sentence vector, for MMR-style redundancy checks
+    path_keys: tuple[tuple[str, int], ...] | None = None  # one shortest seed-to-node path
+    neighbor_keys: tuple[tuple[str, int], ...] | None = None  # graph-adjacent candidates
+    conditional_score: float | None = None  # CE(q + anchor, v), for second-hop rescue
+    conditional_anchor_key: tuple[str, int] | None = None
 
 
 @dataclass

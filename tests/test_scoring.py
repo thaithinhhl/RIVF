@@ -1,8 +1,9 @@
 import numpy as np
 
-from rivf.data.schema import Sentence
+from rivf.data.schema import Passage, QAItem, Sentence
 from rivf.methods.base import Candidate
-from rivf.retrieval.pruning import combined_score, prune
+from rivf.retrieval.pruning import combined_score, normalized_combined_scores, prune
+from rivf.retrieval.scoring import _add_conditional_second_hop_scores
 
 
 def _candidate(title: str, sent_id: int, text: str, semantic: float, graph: float, hop: int) -> Candidate:
@@ -205,3 +206,204 @@ def test_interleave_is_deterministic_across_repeated_calls():
     first = prune(cands, strategy="interleave", top_k=3)
     second = prune(cands, strategy="interleave", top_k=3)
     assert [s.key for s in first] == [s.key for s in second]
+
+
+def test_normalized_topk_removes_raw_score_scale_domination():
+    outlier = _candidate("OUT", 0, "outlier", semantic=1000.0, graph=0.0, hop=2)
+    balanced = _candidate("BAL", 0, "balanced", semantic=0.5, graph=0.9, hop=1)
+    filler = _candidate("FIL", 0, "filler", semantic=0.1, graph=0.1, hop=0)
+    scores = normalized_combined_scores([outlier, balanced, filler], alpha=0.5)
+    assert scores[1] > scores[0]
+    selected = prune(
+        [outlier, balanced, filler], alpha=0.5, strategy="normalized_topk", top_k=1
+    )
+    assert selected[0].passage_title == "BAL"
+
+
+def test_adaptive_mass_can_stop_before_filling_the_hard_budget():
+    candidates = _candidates()
+    selected = prune(
+        candidates,
+        alpha=1.0,
+        strategy="adaptive_mass",
+        budget_tokens=300,
+        mass_threshold=0.7,
+        mass_temperature=0.05,
+        min_nodes=1,
+    )
+    assert len(selected) < len(candidates)
+    assert selected[0].key == ("P", 0)
+
+
+def test_adaptive_mass_path_closure_keeps_intermediate_nodes():
+    a = _candidate("P", 0, "a", semantic=0.1, graph=0.1, hop=0)
+    b = _candidate("P", 1, "b", semantic=0.2, graph=0.2, hop=1)
+    c = _candidate("Q", 0, "c", semantic=0.9, graph=0.9, hop=2)
+    a.path_keys = (a.sentence.key,)
+    b.path_keys = (a.sentence.key, b.sentence.key)
+    c.path_keys = (a.sentence.key, b.sentence.key, c.sentence.key)
+    selected = prune(
+        [a, b, c],
+        alpha=1.0,
+        strategy="adaptive_mass",
+        budget_tokens=300,
+        mass_threshold=0.5,
+        mass_temperature=0.05,
+        min_nodes=1,
+        path_closure=True,
+    )
+    assert {sentence.key for sentence in selected} == {a.sentence.key, b.sentence.key, c.sentence.key}
+
+
+def test_coverage_topk_rewards_an_unseen_passage():
+    a = _candidate("A", 0, "a", semantic=0.9, graph=0.0, hop=0)
+    redundant = _candidate("A", 1, "b", semantic=0.8, graph=0.0, hop=0)
+    other_hop = _candidate("B", 0, "c", semantic=0.7, graph=0.0, hop=1)
+    selected = prune(
+        [a, redundant, other_hop],
+        alpha=1.0,
+        strategy="coverage_topk",
+        top_k=2,
+        coverage_bonus=0.6,
+    )
+    assert [sentence.key for sentence in selected] == [a.sentence.key, other_hop.sentence.key]
+
+
+def test_coverage_topk_skips_an_overflowing_candidate_and_fills_budget():
+    from rivf.eval.efficiency import count_tokens
+
+    first = _candidate("A", 0, "a", semantic=0.9, graph=0.0, hop=0)
+    expensive = _candidate("B", 0, "word " * 50, semantic=0.8, graph=0.0, hop=1)
+    cheap = _candidate("C", 0, "c", semantic=0.7, graph=0.0, hop=1)
+    budget = count_tokens(first.sentence.text) + count_tokens(cheap.sentence.text)
+    selected = prune(
+        [first, expensive, cheap],
+        alpha=1.0,
+        strategy="coverage_topk",
+        budget_tokens=budget,
+    )
+    assert [sentence.key for sentence in selected] == [first.sentence.key, cheap.sentence.key]
+
+
+def test_conditional_topk_retains_rescued_node_and_its_anchor():
+    anchor = _candidate("A", 0, "anchor", semantic=0.9, graph=0.0, hop=0)
+    ordinary = _candidate("B", 0, "ordinary", semantic=0.8, graph=0.0, hop=1)
+    rescued = _candidate("C", 0, "rescued", semantic=0.1, graph=0.0, hop=1)
+    rescued.conditional_score = 1.0
+    rescued.conditional_anchor_key = anchor.sentence.key
+    selected = prune(
+        [anchor, ordinary, rescued],
+        alpha=1.0,
+        strategy="conditional_topk",
+        top_k=2,
+        conditional_weight=1.0,
+    )
+    assert {sentence.key for sentence in selected} == {
+        anchor.sentence.key,
+        rescued.sentence.key,
+    }
+
+
+def test_conditional_topk_without_conditional_scores_matches_relevance_order():
+    selected = prune(
+        _candidates(),
+        alpha=1.0,
+        strategy="conditional_topk",
+        top_k=2,
+        conditional_weight=0.5,
+    )
+    assert [sentence.key for sentence in selected] == [("P", 0), ("Q", 0)]
+
+
+def test_graph_rescue_promotes_only_graph_topk_semantic_miss_with_conditional_support():
+    anchor = _candidate("A", 0, "anchor", semantic=1.0, graph=0.2, hop=0)
+    semantic_second = _candidate("B", 0, "semantic", semantic=0.9, graph=0.1, hop=1)
+    rescued = _candidate("C", 0, "rescued", semantic=0.5, graph=1.0, hop=1)
+    graph_only = _candidate("D", 0, "unvalidated", semantic=0.1, graph=0.8, hop=1)
+    rescued.conditional_score = 1.0
+    rescued.conditional_anchor_key = anchor.sentence.key
+
+    without_rescue = prune(
+        [anchor, semantic_second, rescued, graph_only],
+        alpha=1.0,
+        strategy="graph_rescue_topk",
+        top_k=2,
+        conditional_weight=0.0,
+        graph_rescue_weight=0.0,
+        graph_rescue_k=2,
+    )
+    assert [sentence.key for sentence in without_rescue] == [
+        anchor.sentence.key,
+        semantic_second.sentence.key,
+    ]
+
+    with_rescue = prune(
+        [anchor, semantic_second, rescued, graph_only],
+        alpha=1.0,
+        strategy="graph_rescue_topk",
+        top_k=2,
+        conditional_weight=0.0,
+        graph_rescue_weight=1.0,
+        graph_rescue_k=2,
+    )
+    assert {sentence.key for sentence in with_rescue} == {
+        anchor.sentence.key,
+        rescued.sentence.key,
+    }
+
+
+def test_chain_set_topk_reserves_a_pair_for_each_anchor():
+    a1 = _candidate("A", 0, "a1", semantic=0.9, graph=0.0, hop=0)
+    a2 = _candidate("B", 0, "a2", semantic=0.8, graph=0.0, hop=0)
+    e1 = _candidate("C", 0, "e1", semantic=0.4, graph=0.0, hop=1)
+    e2 = _candidate("D", 0, "e2", semantic=0.3, graph=0.0, hop=1)
+    e1.conditional_score = 0.9
+    e1.conditional_anchor_key = a1.sentence.key
+    e2.conditional_score = 0.8
+    e2.conditional_anchor_key = a2.sentence.key
+    selected = prune(
+        [a1, a2, e1, e2],
+        alpha=1.0,
+        strategy="chain_set_topk",
+        top_k=4,
+        conditional_weight=0.3,
+    )
+    assert {sentence.key for sentence in selected} == {
+        a1.sentence.key,
+        a2.sentence.key,
+        e1.sentence.key,
+        e2.sentence.key,
+    }
+
+
+def test_conditional_rerank_prefers_titles_mentioned_in_question(monkeypatch):
+    film_a = _candidate("Film A", 0, "directed by Person A", semantic=0.8, graph=0.0, hop=0)
+    film_b = _candidate("Film B", 0, "directed by Person B", semantic=0.7, graph=0.0, hop=0)
+    distractor = _candidate("Unrelated", 0, "film director", semantic=0.99, graph=0.0, hop=0)
+    person_a = _candidate("Person A", 0, "born 1900", semantic=0.2, graph=0.0, hop=1)
+    person_b = _candidate("Person B", 0, "born 1910", semantic=0.2, graph=0.0, hop=1)
+    film_a.neighbor_keys = (person_a.sentence.key,)
+    film_b.neighbor_keys = (person_b.sentence.key,)
+    distractor.neighbor_keys = ()
+    item = QAItem(
+        qid="q",
+        question="Which film has the director born first, Film A or Film B?",
+        answer="Film A",
+        type="",
+        level="",
+        passages=[
+            Passage(title=c.sentence.passage_title, sentences=[c.sentence])
+            for c in [film_a, film_b, distractor, person_a, person_b]
+        ],
+        supporting_facts=[],
+    )
+    monkeypatch.setattr(
+        "rivf.retrieval.scoring.rerank_scores",
+        lambda question, texts: [1.0] * len(texts),
+    )
+    candidates = [film_a, film_b, distractor, person_a, person_b]
+    _add_conditional_second_hop_scores(
+        item, candidates, anchor_n=2, prefer_mentioned_anchors=True
+    )
+    assert person_a.conditional_anchor_key == film_a.sentence.key
+    assert person_b.conditional_anchor_key == film_b.sentence.key

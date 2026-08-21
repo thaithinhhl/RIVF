@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import networkx as nx
 import pytest
 
 from rivf.data.hotpotqa import load_hotpotqa
@@ -88,3 +89,15 @@ def test_ppr_gives_the_isolated_distractor_passage_near_zero_score(item):
 def test_ppr_returns_empty_when_no_valid_seed_in_graph(item):
     g = build_graph(item)
     assert personalized_pagerank_scores(g, [("Nonexistent", 99)]) == {}
+
+
+def test_ppr_can_weight_semantically_stronger_seed_more_heavily():
+    g = nx.Graph()
+    g.add_edge("strong", "middle", weight=1.0)
+    g.add_edge("middle", "weak", weight=1.0)
+    scores = personalized_pagerank_scores(
+        g,
+        ["strong", "weak"],
+        source_weights={"strong": 0.95, "weak": 0.05},
+    )
+    assert scores["strong"] > scores["weak"]

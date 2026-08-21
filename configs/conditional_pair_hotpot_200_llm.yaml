@@ -1,0 +1,22 @@
+# Answer-quality validation for the retrieval-selected conditional pair model.
+# Baseline predictions for the identical QIDs already exist in
+# hotpot_600_vs_ours_200_llm, so only the new method incurs API calls.
+name: conditional_pair_hotpot_200_llm
+dataset: data/raw/hotpot_dev_distractor_v1.json
+n_questions: 200
+seed: 0
+call_llm: true
+llm_model: gpt-4o-mini
+include_candidates: false
+methods:
+  - name: ours_pair_a1_w030_200
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    conditional_rerank: true
+    conditional_anchor_n: 1
+    strategy: conditional_topk
+    conditional_weight: 0.30
+    alpha: 1.0
+    budget_tokens: 200

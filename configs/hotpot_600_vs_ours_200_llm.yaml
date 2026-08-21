@@ -1,0 +1,37 @@
+# Final compression comparison on the same 200 HotpotQA questions.
+# Baselines receive up to 600 selected-context tokens; Ours has a hard
+# 200-token ceiling and uses the retrieval-selected budget-filling policy.
+name: hotpot_600_vs_ours_200_llm
+dataset: data/raw/hotpot_dev_distractor_v1.json
+n_questions: 200
+seed: 0
+call_llm: true
+llm_model: gpt-4o-mini
+include_candidates: false
+methods:
+  - name: dense_bi_600
+    kind: dense_rag
+    budget_tokens: 600
+  - name: dense_ce_600
+    kind: dense_rag
+    use_reranker: true
+    budget_tokens: 600
+  - name: graph_1hop_ce_600
+    kind: fixed_hop
+    hops: 1
+    use_reranker: true
+    budget_tokens: 600
+  - name: graph_2hop_ce_600
+    kind: fixed_hop
+    hops: 2
+    use_reranker: true
+    budget_tokens: 600
+  - name: ours_200
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    strategy: coverage_topk
+    alpha: 1.0
+    coverage_bonus: 0.0
+    budget_tokens: 200

@@ -1,0 +1,101 @@
+# Transfer evaluation of the label-free question router on 2WikiMultiHopQA.
+# Baselines receive a 600-token ceiling; Ours has a hard 200-token ceiling.
+name: routed_pair_2wiki_200_retrieval
+dataset: data/raw/2wikimultihopqa_dev.json
+n_questions: 200
+seed: 0
+call_llm: false
+include_candidates: false
+methods:
+  - name: dense_bi_600
+    kind: dense_rag
+    budget_tokens: 600
+  - name: dense_ce_600
+    kind: dense_rag
+    use_reranker: true
+    budget_tokens: 600
+  - name: graph_1hop_ce_600
+    kind: fixed_hop
+    hops: 1
+    use_reranker: true
+    budget_tokens: 600
+  - name: graph_2hop_ce_600
+    kind: fixed_hop
+    hops: 2
+    use_reranker: true
+    budget_tokens: 600
+  - name: ours_semantic_200
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    strategy: coverage_topk
+    coverage_bonus: 0.0
+    alpha: 1.0
+    budget_tokens: 200
+  - name: ours_pair_w010_200
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    conditional_rerank: true
+    conditional_anchor_n: 1
+    strategy: conditional_topk
+    conditional_weight: 0.10
+    alpha: 1.0
+    budget_tokens: 200
+  - name: ours_pair_w020_200
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    conditional_rerank: true
+    conditional_anchor_n: 1
+    strategy: conditional_topk
+    conditional_weight: 0.20
+    alpha: 1.0
+    budget_tokens: 200
+  - name: ours_pair_w030_200
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    conditional_rerank: true
+    conditional_anchor_n: 1
+    strategy: conditional_topk
+    conditional_weight: 0.30
+    alpha: 1.0
+    budget_tokens: 200
+  - name: ours_routed_w010_200
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    conditional_rerank: true
+    conditional_anchor_n: 1
+    strategy: routed_topk
+    conditional_weight: 0.10
+    alpha: 1.0
+    budget_tokens: 200
+  - name: ours_routed_w020_200
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    conditional_rerank: true
+    conditional_anchor_n: 1
+    strategy: routed_topk
+    conditional_weight: 0.20
+    alpha: 1.0
+    budget_tokens: 200
+  - name: ours_routed_w030_200
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    conditional_rerank: true
+    conditional_anchor_n: 1
+    strategy: routed_topk
+    conditional_weight: 0.30
+    alpha: 1.0
+    budget_tokens: 200

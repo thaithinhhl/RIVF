@@ -1,0 +1,43 @@
+# Label-free question router ablation on the same HotpotQA n=200 sample used
+# by the 600-vs-200 main table. Only Ours variants are needed here because
+# the four baselines already have complete paired results.
+name: routed_pair_hotpot_200_retrieval
+dataset: data/raw/hotpot_dev_distractor_v1.json
+n_questions: 200
+seed: 0
+call_llm: false
+include_candidates: false
+methods:
+  - name: ours_routed_w010_200
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    conditional_rerank: true
+    conditional_anchor_n: 1
+    strategy: routed_topk
+    conditional_weight: 0.10
+    alpha: 1.0
+    budget_tokens: 200
+  - name: ours_routed_w020_200
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    conditional_rerank: true
+    conditional_anchor_n: 1
+    strategy: routed_topk
+    conditional_weight: 0.20
+    alpha: 1.0
+    budget_tokens: 200
+  - name: ours_routed_w030_200
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    conditional_rerank: true
+    conditional_anchor_n: 1
+    strategy: routed_topk
+    conditional_weight: 0.30
+    alpha: 1.0
+    budget_tokens: 200

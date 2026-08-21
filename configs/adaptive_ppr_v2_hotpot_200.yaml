@@ -1,0 +1,94 @@
+# Retrieval-only go/no-go evaluation for the semantic-first adaptive PPR v2.
+# All variants share CE candidate scores + PPR on the same 2-hop pool.
+name: adaptive_ppr_v2_hotpot_200
+dataset: data/raw/hotpot_dev_distractor_v1.json
+n_questions: 200
+seed: 0
+call_llm: false
+include_candidates: false
+methods:
+  - name: semantic_top6
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    strategy: normalized_topk
+    alpha: 1.0
+    top_k: 6
+  - name: normalized_blend_top6
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    strategy: normalized_topk
+    alpha: [0.4, 0.7]
+    top_k: 6
+  - name: adaptive_top6
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    strategy: normalized_topk
+    adaptive_alpha: semantic_first
+    proxy_k: 6
+    top_k: 6
+  - name: semantic_budget300
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    strategy: normalized_topk
+    alpha: 1.0
+    budget_tokens: 300
+  - name: adaptive_mass_050
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    strategy: adaptive_mass
+    adaptive_alpha: semantic_first
+    proxy_k: 6
+    mass_threshold: 0.50
+    mass_temperature: 0.15
+    min_nodes: 4
+    path_closure: true
+    budget_tokens: 300
+  - name: adaptive_mass_065
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    strategy: adaptive_mass
+    adaptive_alpha: semantic_first
+    proxy_k: 6
+    mass_threshold: 0.65
+    mass_temperature: 0.15
+    min_nodes: 4
+    path_closure: true
+    budget_tokens: 300
+  - name: adaptive_mass_080
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    strategy: adaptive_mass
+    adaptive_alpha: semantic_first
+    proxy_k: 6
+    mass_threshold: 0.80
+    mass_temperature: 0.15
+    min_nodes: 4
+    path_closure: true
+    budget_tokens: 300
+  - name: adaptive_mass_065_no_path
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    strategy: adaptive_mass
+    adaptive_alpha: semantic_first
+    proxy_k: 6
+    mass_threshold: 0.65
+    mass_temperature: 0.15
+    min_nodes: 4
+    path_closure: false
+    budget_tokens: 300

@@ -1,0 +1,91 @@
+# Retrieval-only selection study: generous 600-token baselines versus a hard
+# 200-token ceiling for Ours.  The same-budget tables remain necessary for a
+# fair scientific comparison; this config measures the compression setting.
+name: hotpot_600_vs_ours_200_retrieval
+dataset: data/raw/hotpot_dev_distractor_v1.json
+n_questions: 200
+seed: 0
+call_llm: false
+include_candidates: false
+methods:
+  - name: dense_bi_600
+    kind: dense_rag
+    budget_tokens: 600
+  - name: dense_ce_600
+    kind: dense_rag
+    use_reranker: true
+    budget_tokens: 600
+  - name: graph_1hop_ce_600
+    kind: fixed_hop
+    hops: 1
+    use_reranker: true
+    budget_tokens: 600
+  - name: graph_2hop_ce_600
+    kind: fixed_hop
+    hops: 2
+    use_reranker: true
+    budget_tokens: 600
+  - name: ours_semantic_200
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    strategy: coverage_topk
+    alpha: 1.0
+    coverage_bonus: 0.0
+    budget_tokens: 200
+  - name: ours_coverage_005_200
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    strategy: coverage_topk
+    alpha: 1.0
+    coverage_bonus: 0.05
+    budget_tokens: 200
+  - name: ours_coverage_010_200
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    strategy: coverage_topk
+    alpha: 1.0
+    coverage_bonus: 0.10
+    budget_tokens: 200
+  - name: ours_coverage_015_200
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    strategy: coverage_topk
+    alpha: 1.0
+    coverage_bonus: 0.15
+    budget_tokens: 200
+  - name: ours_coverage_020_200
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    strategy: coverage_topk
+    alpha: 1.0
+    coverage_bonus: 0.20
+    budget_tokens: 200
+  - name: ours_coverage_030_200
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    strategy: coverage_topk
+    alpha: 1.0
+    coverage_bonus: 0.30
+    budget_tokens: 200
+  - name: ours_adaptive_200
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    strategy: coverage_topk
+    adaptive_alpha: semantic_first
+    proxy_k: 6
+    coverage_bonus: 0.10
+    budget_tokens: 200

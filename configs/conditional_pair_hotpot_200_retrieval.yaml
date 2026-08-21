@@ -1,0 +1,129 @@
+# Gold-free retrieval ablation for hop-conditioned evidence-pair reranking.
+# All variants share the same 2-hop pool, CE model, 200-token hard ceiling,
+# and seeded 200-question HotpotQA sample.
+name: conditional_pair_hotpot_200_retrieval
+dataset: data/raw/hotpot_dev_distractor_v1.json
+n_questions: 200
+seed: 0
+call_llm: false
+include_candidates: false
+methods:
+  - name: semantic_budget_fill_200
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    strategy: coverage_topk
+    alpha: 1.0
+    coverage_bonus: 0.0
+    budget_tokens: 200
+  - name: pair_a1_w010
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    conditional_rerank: true
+    conditional_anchor_n: 1
+    strategy: conditional_topk
+    conditional_weight: 0.10
+    alpha: 1.0
+    budget_tokens: 200
+  - name: pair_a1_w020
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    conditional_rerank: true
+    conditional_anchor_n: 1
+    strategy: conditional_topk
+    conditional_weight: 0.20
+    alpha: 1.0
+    budget_tokens: 200
+  - name: pair_a1_w030
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    conditional_rerank: true
+    conditional_anchor_n: 1
+    strategy: conditional_topk
+    conditional_weight: 0.30
+    alpha: 1.0
+    budget_tokens: 200
+  - name: pair_a1_w050
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    conditional_rerank: true
+    conditional_anchor_n: 1
+    strategy: conditional_topk
+    conditional_weight: 0.50
+    alpha: 1.0
+    budget_tokens: 200
+  - name: pair_a2_w010
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    conditional_rerank: true
+    conditional_anchor_n: 2
+    strategy: conditional_topk
+    conditional_weight: 0.10
+    alpha: 1.0
+    budget_tokens: 200
+  - name: pair_a2_w020
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    conditional_rerank: true
+    conditional_anchor_n: 2
+    strategy: conditional_topk
+    conditional_weight: 0.20
+    alpha: 1.0
+    budget_tokens: 200
+  - name: pair_a2_w030
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    conditional_rerank: true
+    conditional_anchor_n: 2
+    strategy: conditional_topk
+    conditional_weight: 0.30
+    alpha: 1.0
+    budget_tokens: 200
+  - name: pair_a2_w050
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    conditional_rerank: true
+    conditional_anchor_n: 2
+    strategy: conditional_topk
+    conditional_weight: 0.50
+    alpha: 1.0
+    budget_tokens: 200
+  - name: pair_a3_w020
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    conditional_rerank: true
+    conditional_anchor_n: 3
+    strategy: conditional_topk
+    conditional_weight: 0.20
+    alpha: 1.0
+    budget_tokens: 200
+  - name: pair_a3_w030
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: ppr
+    conditional_rerank: true
+    conditional_anchor_n: 3
+    strategy: conditional_topk
+    conditional_weight: 0.30
+    alpha: 1.0
+    budget_tokens: 200

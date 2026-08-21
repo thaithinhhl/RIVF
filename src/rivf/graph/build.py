@@ -57,18 +57,37 @@ def build_graph(item: QAItem) -> nx.Graph:
 def bfs_hop_distances(g: nx.Graph, sources: list[tuple]) -> dict[tuple, int]:
     """Unweighted multi-source BFS: hop distance from the nearest source to
     every node reachable from any of them."""
+    dist, _ = bfs_hop_distances_with_parents(g, sources)
+    return dist
+
+
+def bfs_hop_distances_with_parents(
+    g: nx.Graph, sources: list[tuple]
+) -> tuple[dict[tuple, int], dict[tuple, tuple | None]]:
+    """Multi-source BFS plus one deterministic shortest-path parent/node.
+
+    Parent pointers let downstream pruning retain the evidence path when it
+    selects an expanded node. The existing distance-only API delegates here
+    so candidate reachability and path closure cannot silently diverge.
+    """
     dist = {s: 0 for s in sources if s in g}
+    parent: dict[tuple, tuple | None] = {s: None for s in dist}
     queue = deque(dist.keys())
     while queue:
         u = queue.popleft()
         for v in g.neighbors(u):
             if v not in dist:
                 dist[v] = dist[u] + 1
+                parent[v] = u
                 queue.append(v)
-    return dist
+    return dist, parent
 
 
-def personalized_pagerank_scores(g: nx.Graph, sources: list[tuple]) -> dict[tuple, float]:
+def personalized_pagerank_scores(
+    g: nx.Graph,
+    sources: list[tuple],
+    source_weights: dict[tuple, float] | None = None,
+) -> dict[tuple, float]:
     """GraphRel(v) via Personalized PageRank restarting from the seed nodes
     -- a continuous, multi-path-sensitive alternative to bfs_hop_distances'
     single-shortest-path count. A node reachable by several short paths from
@@ -84,8 +103,18 @@ def personalized_pagerank_scores(g: nx.Graph, sources: list[tuple]) -> dict[tupl
     if not valid_sources:
         return {}
     personalization = dict.fromkeys(g.nodes, 0.0)
-    for s in valid_sources:
-        personalization[s] = 1.0 / len(valid_sources)
+    if source_weights is None:
+        for s in valid_sources:
+            personalization[s] = 1.0 / len(valid_sources)
+    else:
+        positive = {s: max(0.0, source_weights.get(s, 0.0)) for s in valid_sources}
+        total = sum(positive.values())
+        if total <= 0:
+            for s in valid_sources:
+                personalization[s] = 1.0 / len(valid_sources)
+        else:
+            for s, weight in positive.items():
+                personalization[s] = weight / total
     return nx.pagerank(g, alpha=0.85, personalization=personalization, weight="weight")
 
 
