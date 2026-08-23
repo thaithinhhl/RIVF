@@ -7,14 +7,17 @@ Usage: python -m rivf.experiments.run_experiment configs/main_comparison.yaml
 """
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
+import os
 import random
 import time
 from pathlib import Path
 from typing import Iterator
 
 import yaml
+from openai import RateLimitError
 
 from rivf.data.hotpotqa import load_hotpotqa
 from rivf.data.schema import QAItem, Sentence
@@ -31,7 +34,7 @@ from rivf.retrieval.adaptive_alpha import (
     semantic_first_signals,
 )
 from rivf.retrieval.embeddings import cosine_sim, embed, embed_batch
-from rivf.retrieval.pruning import prune
+from rivf.retrieval.pruning import graph_rescue_signals, prune
 from rivf.retrieval.question_router import (
     BRIDGE_COMPARISON,
     DIRECT_COMPARISON,
@@ -45,6 +48,30 @@ def _as_list(x) -> list:
     return x if isinstance(x, list) else [x]
 
 
+def _sample_items(items: list[QAItem], n: int, seed: int, stratified: bool) -> list[QAItem]:
+    """Deterministically sample while preserving question-type proportions."""
+    if not stratified:
+        shuffled = list(items)
+        random.Random(seed).shuffle(shuffled)
+        return shuffled[:n]
+    groups: dict[str, list[QAItem]] = {}
+    for item in items:
+        groups.setdefault(item.type, []).append(item)
+    rng = random.Random(seed)
+    for group in groups.values():
+        rng.shuffle(group)
+    target = min(n, len(items))
+    exact = {key: target * len(group) / len(items) for key, group in groups.items()}
+    quotas = {key: int(value) for key, value in exact.items()}
+    remainder = target - sum(quotas.values())
+    order = sorted(groups, key=lambda key: (exact[key] - quotas[key], key), reverse=True)
+    for key in order[:remainder]:
+        quotas[key] += 1
+    sampled = [item for key in sorted(groups) for item in groups[key][:quotas[key]]]
+    rng.shuffle(sampled)
+    return sampled
+
+
 def _candidate_to_dict(c: Candidate) -> dict:
     return {
         "title": c.sentence.passage_title,
@@ -56,10 +83,31 @@ def _candidate_to_dict(c: Candidate) -> dict:
         "neighbor_keys": c.neighbor_keys,
         "conditional_score": c.conditional_score,
         "conditional_anchor_key": c.conditional_anchor_key,
+        "text_tokens": count_tokens(c.sentence.text),
     }
 
 
 RunnerRow = tuple[dict, list[Candidate], list[Sentence], float]
+
+
+def _generate_fields(prompt: str, model: str, gold_answer: str) -> dict:
+    start = time.perf_counter()
+    for attempt in range(7):
+        try:
+            prediction = generate_answer(prompt, model=model)
+            break
+        except RateLimitError:
+            if attempt == 6:
+                raise
+            time.sleep(min(2 ** (attempt + 1), 30))
+    return {
+        "llm_latency_s": time.perf_counter() - start,
+        "llm_model": model,
+        "prompt_tokens": count_tokens(prompt),
+        "output_tokens": count_tokens(prediction),
+        "prediction": prediction,
+        **answer_metrics(prediction, gold_answer),
+    }
 
 
 def _run_dense_rag(item: QAItem, cfg: dict) -> Iterator[RunnerRow]:
@@ -102,7 +150,7 @@ def _run_selective_graph(item: QAItem, cfg: dict) -> Iterator[RunnerRow]:
     # cheap re-sort/re-slice of the same cached component scores.
     strategy = cfg.get("strategy", "topk")
     routed = strategy in ("routed_topk", "routed_graph_rescue")
-    graph_rescue = strategy == "routed_graph_rescue"
+    graph_rescue = strategy in ("routed_graph_rescue", "graph_rescue_topk")
     route = route_question(item.question) if routed else None
     bridge_policy = cfg.get("bridge_policy", "single_chain")
     if bridge_policy not in ("single_chain", "dual_chain"):
@@ -121,23 +169,37 @@ def _run_selective_graph(item: QAItem, cfg: dict) -> Iterator[RunnerRow]:
         else cfg.get("conditional_anchor_n", 2)
     )
 
-    candidate_start = time.perf_counter()
-    candidates = generate_candidates(
-        item,
-        max_hops=cfg.get("max_hops", 2),
-        use_reranker=cfg.get("use_reranker", False),
-        graph_rel_method=cfg.get("graph_rel_method", "hop"),
-        conditional_rerank=cfg.get("conditional_rerank", False),
-        conditional_anchor_n=conditional_anchor_n,
-        prefer_mentioned_anchors=(
-            cfg.get("prefer_mentioned_anchors", True)
-            if route == BRIDGE_COMPARISON and bridge_policy == "dual_chain"
-            else False
-        ),
-        query_weighted_ppr=cfg.get("query_weighted_ppr", False),
-        ppr_seed_temperature=cfg.get("ppr_seed_temperature", 0.20),
+    prefer_mentioned_anchors = (
+        cfg.get("prefer_mentioned_anchors", True)
+        if route == BRIDGE_COMPARISON and bridge_policy == "dual_chain"
+        else False
     )
-    candidate_latency = time.perf_counter() - candidate_start
+    cache_key = (
+        cfg.get("max_hops", 2), cfg.get("use_reranker", False),
+        cfg.get("graph_rel_method", "hop"), cfg.get("conditional_rerank", False),
+        conditional_anchor_n, prefer_mentioned_anchors,
+        cfg.get("query_weighted_ppr", False), cfg.get("ppr_seed_temperature", 0.20),
+    )
+    candidate_cache = cfg.get("_candidate_cache")
+    cached = candidate_cache.get(cache_key) if candidate_cache is not None else None
+    if cached is None:
+        candidate_start = time.perf_counter()
+        candidates = generate_candidates(
+            item,
+            max_hops=cfg.get("max_hops", 2),
+            use_reranker=cfg.get("use_reranker", False),
+            graph_rel_method=cfg.get("graph_rel_method", "hop"),
+            conditional_rerank=cfg.get("conditional_rerank", False),
+            conditional_anchor_n=conditional_anchor_n,
+            prefer_mentioned_anchors=prefer_mentioned_anchors,
+            query_weighted_ppr=cfg.get("query_weighted_ppr", False),
+            ppr_seed_temperature=cfg.get("ppr_seed_temperature", 0.20),
+        )
+        candidate_latency = time.perf_counter() - candidate_start
+        if candidate_cache is not None:
+            candidate_cache[cache_key] = (candidates, candidate_latency)
+    else:
+        candidates, candidate_latency = cached
     adaptive = cfg.get("adaptive_alpha", False)  # False | True (binary switch) | "continuous"
     # alpha is a no-op for strategy="random"/"interleave" (neither blends by
     # weight -- random ignores scores, interleave gives both channels equal
@@ -178,7 +240,14 @@ def _run_selective_graph(item: QAItem, cfg: dict) -> Iterator[RunnerRow]:
                     "conditional_weight": cfg.get("conditional_weight", 0.2),
                     "graph_rescue_weight": rescue_weight,
                     "graph_rescue_k": cfg.get("graph_rescue_k", 6),
+                    "graph_rescue_gate": cfg.get("graph_rescue_gate", True),
+                    "preserve_pairs": cfg.get("preserve_pairs", True),
                 }
+                rescue_signals = (
+                    graph_rescue_signals(candidates, proxy_k=cfg.get("graph_rescue_k", 6))
+                    if graph_rescue
+                    else {}
+                )
                 if adaptive:
                     if adaptive == "semantic_first":
                         proxy_k = cfg.get("proxy_k", 6)
@@ -204,6 +273,7 @@ def _run_selective_graph(item: QAItem, cfg: dict) -> Iterator[RunnerRow]:
                         "computed_alpha": eff_alpha,
                         **({"computed_route": route} if route is not None else {}),
                         **{f"proxy_{key}": value for key, value in proxy_signals.items()},
+                        **{f"graph_rescue_{key}": value for key, value in rescue_signals.items()},
                     }, candidates, selected, latency
                 else:
                     selection_start = time.perf_counter()
@@ -218,6 +288,7 @@ def _run_selective_graph(item: QAItem, cfg: dict) -> Iterator[RunnerRow]:
                         **run_params,
                         "alpha": alpha,
                         **({"computed_route": route} if route is not None else {}),
+                        **{f"graph_rescue_{key}": value for key, value in rescue_signals.items()},
                     }, candidates, selected, latency
 
 
@@ -259,7 +330,7 @@ def _expected_keys(qid: str, method_cfg: dict) -> set[tuple]:
         alphas = [None]
     rescue_weights = (
         _as_list(method_cfg.get("graph_rescue_weight", [0.0]))
-        if method_cfg.get("strategy") == "routed_graph_rescue"
+        if method_cfg.get("strategy") in ("routed_graph_rescue", "graph_rescue_topk")
         else [None]
     )
     return {
@@ -298,16 +369,22 @@ def run(config_path: str) -> Path:
     dataset_path = config.get("dataset", "data/raw/hotpot_dev_distractor_v1.json")
     sample_seed = config.get("seed", 0)
     items = load_hotpotqa(dataset_path)
-    random.Random(sample_seed).shuffle(items)
-    items = items[: config["n_questions"]]
+    items = _sample_items(
+        items,
+        config["n_questions"],
+        sample_seed,
+        stratified=config.get("stratified_sampling", False),
+    )
 
-    call_llm = config.get("call_llm", False)
+    call_llm = config.get("call_llm", False) and os.environ.get("RIVF_SKIP_LLM") != "1"
     llm_model = config.get("llm_model", DEFAULT_MODEL)
     # A dense (alpha x budget) grid search re-slices the SAME candidate list
     # many times per question -- serializing it on every row would mostly be
     # redundant bytes, so wide sweeps can turn it off.
     include_candidates = config.get("include_candidates", True)
-    out_path = Path("results") / config["name"] / "results.jsonl"
+    output_root = os.environ.get("RIVF_OUTPUT_ROOT", config.get("output_root", "results"))
+    output_name = os.environ.get("RIVF_OUTPUT_NAME", config["name"])
+    out_path = Path(output_root) / output_name / "results.jsonl"
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Resumable: a long run calling an external API can be interrupted by a
@@ -331,7 +408,10 @@ def run(config_path: str) -> Path:
 
     with out_path.open("a") as f:
         for i, item in enumerate(items, 1):
-            for method_cfg in config["methods"]:
+            pending: list[tuple[tuple, dict, str | None]] = []
+            candidate_cache: dict[tuple, tuple[list[Candidate], float]] = {}
+            for raw_method_cfg in config["methods"]:
+                method_cfg = {**raw_method_cfg, "_candidate_cache": candidate_cache}
                 if _expected_keys(item.qid, method_cfg) <= done_keys:
                     continue
                 runner = _RUNNERS[method_cfg["kind"]]
@@ -354,6 +434,7 @@ def run(config_path: str) -> Path:
                         "num_selected": len(selected),
                         "context_tokens": tokens,
                         "retrieval_latency_s": retrieval_latency_s,
+                        "selected_keys": [list(s.key) for s in selected],
                         **sp,
                     }
                     if include_candidates:
@@ -368,14 +449,25 @@ def run(config_path: str) -> Path:
                             selected,
                             chain_aware=chain_aware_prompt,
                         )
-                        prediction = generate_answer(prompt, model=llm_model)
-                        row["llm_model"] = llm_model
-                        row["prompt_tokens"] = count_tokens(prompt)
-                        row["prediction"] = prediction
-                        row.update(answer_metrics(prediction, item.answer))
-                    f.write(json.dumps(row) + "\n")
-                    f.flush()
-                    done_keys.add(key)
+                    else:
+                        prompt = None
+                    pending.append((key, row, prompt))
+            if call_llm and pending:
+                configured_workers = int(
+                    os.environ.get("RIVF_LLM_CONCURRENCY", config.get("llm_concurrency", 6))
+                )
+                workers = min(configured_workers, len(pending))
+                with ThreadPoolExecutor(max_workers=workers) as executor:
+                    fields = executor.map(
+                        lambda entry: _generate_fields(entry[2], llm_model, item.answer),
+                        pending,
+                    )
+                    for (_, row, _), generated in zip(pending, fields):
+                        row.update(generated)
+            for key, row, _ in pending:
+                f.write(json.dumps(row) + "\n")
+                f.flush()
+                done_keys.add(key)
             if i % 20 == 0 or i == len(items):
                 print(f"...{i}/{len(items)} questions done")
 

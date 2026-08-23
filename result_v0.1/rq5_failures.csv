@@ -1,0 +1,18 @@
+dataset,stage,n
+2Wiki,Budget infeasible,1
+2Wiki,Conditional scoring error,68
+2Wiki,Generation error,48
+2Wiki,Graph false rescue,16
+2Wiki,Graph reachability miss,8
+2Wiki,No diagnosed failure,54
+2Wiki,Pair/pruning error,64
+2Wiki,Router error,10
+2Wiki,Seed miss,4
+HotpotQA,Conditional scoring error,48
+HotpotQA,Generation error,43
+HotpotQA,Graph false rescue,22
+HotpotQA,Graph reachability miss,13
+HotpotQA,No diagnosed failure,75
+HotpotQA,Pair/pruning error,54
+HotpotQA,Router error,16
+HotpotQA,Seed miss,2

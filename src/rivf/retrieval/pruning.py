@@ -280,6 +280,8 @@ def _graph_rescue_topk_select(
     conditional_weight: float,
     graph_rescue_weight: float,
     graph_rescue_k: int,
+    graph_rescue_gate: bool,
+    preserve_pairs: bool,
 ) -> list[Sentence]:
     """Use graph as a gated residual only for semantic Top-K misses.
 
@@ -316,7 +318,9 @@ def _graph_rescue_topk_select(
         )[:k]
     )
     signals = graph_rescue_signals(candidates, proxy_k=k)
-    effective_weight = graph_rescue_weight * signals["effective_weight_factor"]
+    effective_weight = graph_rescue_weight * (
+        signals["effective_weight_factor"] if graph_rescue_gate else 1.0
+    )
     scores = []
     for index, candidate in enumerate(candidates):
         rescue = 0.0
@@ -348,11 +352,9 @@ def _graph_rescue_topk_select(
     used_tokens = 0
     for index in order:
         candidate = candidates[index]
-        keys = (
-            (candidate.conditional_anchor_key, candidate.sentence.key)
-            if candidate.conditional_anchor_key is not None
-            else (candidate.sentence.key,)
-        )
+        keys = (candidate.sentence.key,)
+        if preserve_pairs and candidate.conditional_anchor_key is not None:
+            keys = (candidate.conditional_anchor_key, candidate.sentence.key)
         additions = [
             by_key[key] for key in keys if key in by_key and key not in selected_keys
         ]
@@ -596,6 +598,8 @@ def prune(
     conditional_weight: float = 0.2,
     graph_rescue_weight: float = 0.0,
     graph_rescue_k: int = 6,
+    graph_rescue_gate: bool = True,
+    preserve_pairs: bool = True,
 ) -> list[Sentence]:
     """Select a subset of candidates.
 
@@ -679,6 +683,8 @@ def prune(
             conditional_weight,
             graph_rescue_weight,
             graph_rescue_k,
+            graph_rescue_gate,
+            preserve_pairs,
         )
 
     if strategy == "chain_set_topk":
