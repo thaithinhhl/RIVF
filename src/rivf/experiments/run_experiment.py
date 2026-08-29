@@ -25,7 +25,11 @@ from rivf.data.schema import QAItem, Sentence
 from rivf.eval.answer_metrics import answer_metrics
 from rivf.eval.efficiency import count_tokens
 from rivf.eval.supporting_facts import supporting_fact_metrics
-from rivf.generation.llm_client import DEFAULT_MODEL, generate_answer_with_metadata
+from rivf.generation.llm_client import (
+    DEFAULT_BACKEND as DEFAULT_LLM_BACKEND,
+    DEFAULT_MODEL,
+    generate_answer_with_metadata,
+)
 from rivf.generation.prompts import build_prompt
 from rivf.graph.build import ALL_EDGE_TYPES
 from rivf.methods.base import Candidate
@@ -35,16 +39,28 @@ from rivf.retrieval.adaptive_alpha import (
     estimate_alpha_semantic_first,
     semantic_first_signals,
 )
-from rivf.retrieval.embeddings import MODEL_NAME as EMBEDDING_MODEL
-from rivf.retrieval.embeddings import cosine_sim, embed, embed_batch
+from rivf.retrieval.embeddings import (
+    backend_name as embedding_backend_name,
+    configure as configure_embeddings,
+    cosine_sim,
+    embed,
+    embed_batch,
+    model_name as embedding_model_name,
+    usage as embedding_usage,
+)
 from rivf.retrieval.pruning import VALID_STRATEGIES, graph_rescue_signals, prune
 from rivf.retrieval.question_router import (
     BRIDGE_COMPARISON,
     DIRECT_COMPARISON,
     route_question,
 )
-from rivf.retrieval.reranker import MODEL_NAME as RERANKER_MODEL
-from rivf.retrieval.reranker import rerank_scores
+from rivf.retrieval.reranker import (
+    backend_name as reranker_backend_name,
+    configure as configure_reranker,
+    model_name as reranker_model_name,
+    rerank_scores,
+    usage as reranker_usage,
+)
 from rivf.retrieval.scoring import generate_candidates
 
 
@@ -95,11 +111,18 @@ def _candidate_to_dict(c: Candidate) -> dict:
 RunnerRow = tuple[dict, list[Candidate], list[Sentence], float]
 
 
-def _generate_fields(prompt: str, model: str, gold_answer: str) -> dict:
+def _generate_fields(
+    prompt: str,
+    model: str,
+    gold_answer: str,
+    backend: str = DEFAULT_LLM_BACKEND,
+) -> dict:
     start = time.perf_counter()
     for attempt in range(7):
         try:
-            generation = generate_answer_with_metadata(prompt, model=model)
+            generation = generate_answer_with_metadata(
+                prompt, model=model, backend=backend
+            )
             break
         except RateLimitError:
             if attempt == 6:
@@ -470,6 +493,19 @@ def preflight(config_path: str) -> dict:
         if edge_types - ALL_EDGE_TYPES:
             raise ValueError(f"unknown edge types in method {method['name']}")
 
+    default_backend = config.get("backend")
+    embedding_backend = config.get("embedding_backend", default_backend or "local")
+    reranker_backend = config.get("reranker_backend", default_backend or "local")
+    llm_backend = config.get(
+        "llm_backend", default_backend or DEFAULT_LLM_BACKEND
+    )
+    if embedding_backend not in {"local", "openrouter"}:
+        raise ValueError("embedding_backend must be 'local' or 'openrouter'")
+    if reranker_backend not in {"local", "openrouter"}:
+        raise ValueError("reranker_backend must be 'local' or 'openrouter'")
+    if llm_backend not in {"openai", "openrouter"}:
+        raise ValueError("llm_backend must be 'openai' or 'openrouter'")
+
     rows_per_question = sum(len(_expected_keys("preflight", method)) for method in config["methods"])
     report = {
         "config": config_path,
@@ -481,6 +517,12 @@ def preflight(config_path: str) -> dict:
         "rows_per_question": rows_per_question,
         "expected_rows": n_questions * rows_per_question,
         "expected_llm_calls": n_questions * rows_per_question if config.get("call_llm", False) else 0,
+        "embedding_backend": embedding_backend,
+        "embedding_model": config.get("embedding_model"),
+        "reranker_backend": reranker_backend,
+        "reranker_model": config.get("reranker_model"),
+        "llm_backend": llm_backend,
+        "llm_model": config.get("llm_model", DEFAULT_MODEL),
         "git_revision": _git_revision(),
         "git_dirty": _git_dirty(),
     }
@@ -513,6 +555,32 @@ def run(config_path: str) -> Path:
         sample_seed,
         stratified=config.get("stratified_sampling", False),
     )
+    shard_count = int(os.environ.get("RIVF_SHARD_COUNT", "1"))
+    shard_index = int(os.environ.get("RIVF_SHARD_INDEX", "0"))
+    if shard_count <= 0:
+        raise ValueError("RIVF_SHARD_COUNT must be positive")
+    if not 0 <= shard_index < shard_count:
+        raise ValueError("RIVF_SHARD_INDEX must be in [0, RIVF_SHARD_COUNT)")
+    sharded_items = [
+        item for position, item in enumerate(items) if position % shard_count == shard_index
+    ]
+    configured_run_limit = os.environ.get("RIVF_RUN_LIMIT")
+    run_items = (
+        sharded_items[: int(configured_run_limit)]
+        if configured_run_limit
+        else sharded_items
+    )
+    if configured_run_limit and int(configured_run_limit) <= 0:
+        raise ValueError("RIVF_RUN_LIMIT must be positive")
+
+    default_backend = config.get("backend")
+    embedding_backend = config.get("embedding_backend", default_backend or "local")
+    reranker_backend = config.get("reranker_backend", default_backend or "local")
+    llm_backend = config.get(
+        "llm_backend", default_backend or DEFAULT_LLM_BACKEND
+    )
+    configure_embeddings(embedding_backend, config.get("embedding_model"))
+    configure_reranker(reranker_backend, config.get("reranker_model"))
 
     call_llm = config.get("call_llm", False) and os.environ.get("RIVF_SKIP_LLM") != "1"
     llm_model = config.get("llm_model", DEFAULT_MODEL)
@@ -547,7 +615,7 @@ def run(config_path: str) -> Path:
         print(f"Resuming: {len(done_keys)} rows already done in {out_path}")
 
     with out_path.open("a") as f:
-        for i, item in enumerate(items, 1):
+        for i, item in enumerate(run_items, 1):
             pending: list[tuple[tuple, dict, str | None]] = []
             candidate_cache: dict[tuple, tuple[list[Candidate], float]] = {}
             for raw_method_cfg in config["methods"]:
@@ -573,8 +641,18 @@ def run(config_path: str) -> Path:
                         "config_sha256": config_sha256,
                         "code_revision": code_revision,
                         "git_dirty": git_dirty,
-                        "embedding_model": EMBEDDING_MODEL,
-                        "reranker_model": RERANKER_MODEL if method_cfg.get("use_reranker", False) else None,
+                        "embedding_backend": embedding_backend_name(),
+                        "embedding_model": embedding_model_name(),
+                        "reranker_backend": (
+                            reranker_backend_name()
+                            if method_cfg.get("use_reranker", False)
+                            else None
+                        ),
+                        "reranker_model": (
+                            reranker_model_name()
+                            if method_cfg.get("use_reranker", False)
+                            else None
+                        ),
                         "use_reranker": method_cfg.get("use_reranker", False),
                         **run_params,
                         "num_selected": len(selected),
@@ -605,7 +683,9 @@ def run(config_path: str) -> Path:
                 workers = min(configured_workers, len(pending))
                 with ThreadPoolExecutor(max_workers=workers) as executor:
                     fields = executor.map(
-                        lambda entry: _generate_fields(entry[2], llm_model, item.answer),
+                        lambda entry: _generate_fields(
+                            entry[2], llm_model, item.answer, llm_backend
+                        ),
                         pending,
                     )
                     for (_, row, _), generated in zip(pending, fields):
@@ -614,8 +694,36 @@ def run(config_path: str) -> Path:
                 f.write(json.dumps(row) + "\n")
                 f.flush()
                 done_keys.add(key)
-            if i % 20 == 0 or i == len(items):
-                print(f"...{i}/{len(items)} questions done")
+            if i % 20 == 0 or i == len(run_items):
+                print(
+                    f"...{i}/{len(sharded_items)} shard questions done"
+                    + (
+                        " (run limit reached)"
+                        if len(run_items) < len(sharded_items)
+                        else ""
+                    )
+                )
+
+                metadata = {
+                    "config": config_path,
+                    "config_sha256": config_sha256,
+                    "code_revision": code_revision,
+                    "git_dirty": git_dirty,
+                    "completed_rows": len(done_keys),
+                    "shard_count": shard_count,
+                    "shard_index": shard_index,
+                    "embedding_backend": embedding_backend_name(),
+                    "embedding_model": embedding_model_name(),
+                    "embedding_api_usage": embedding_usage(),
+                    "reranker_backend": reranker_backend_name(),
+                    "reranker_model": reranker_model_name(),
+                    "reranker_api_usage": reranker_usage(),
+                    "llm_backend": llm_backend,
+                    "llm_model": llm_model,
+                }
+                (out_path.parent / "run_metadata.json").write_text(
+                    json.dumps(metadata, indent=2) + "\n"
+                )
 
     print(f"Wrote results -> {out_path}")
     return out_path
