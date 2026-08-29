@@ -1,0 +1,49 @@
+name: graft_v1_2wiki_ablation_n1000
+dataset: data/raw/2wikimultihopqa_dev.json
+qid_manifest: data/manifests/2wiki_graft_v1_evaluation.json
+n_questions: 1000
+seed: 2
+stratified_sampling: true
+deduplicate_passages: true
+invalid_gold_policy: exclude
+call_llm: true
+llm_model: gpt-4o-mini-2024-07-18
+include_candidates: false
+methods:
+  - &graft
+    name: Full GRAFT
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: hop
+    graph_edge_types: [same_passage, entity_overlap, title_mention]
+    strategy: graft
+    conditional_rerank: true
+    conditional_anchor_n: 2
+    conditional_link_top_l: 2
+    conditional_weight: 0.30
+    preserve_pairs: true
+    alpha: 1.0
+    budget_tokens: 200
+  - <<: *graft
+    name: -GraphExpansion
+    max_hops: 0
+  - <<: *graft
+    name: -Router
+    strategy: graft_pair_topk
+  - <<: *graft
+    name: -LinkVerification
+    strategy: routed_topk
+    conditional_rerank: false
+  - <<: *graft
+    name: -PairPreservation
+    preserve_pairs: false
+  - <<: *graft
+    name: AdjacencyOnly
+    graph_edge_types: [same_passage]
+  - <<: *graft
+    name: Adjacency+Entity
+    graph_edge_types: [same_passage, entity_overlap]
+  - <<: *graft
+    name: Adjacency+Title
+    graph_edge_types: [same_passage, title_mention]

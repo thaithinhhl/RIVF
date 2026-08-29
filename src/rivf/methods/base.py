@@ -13,7 +13,7 @@ class Candidate:
     cheap re-slicing of an already-computed candidate set, not a re-retrieval."""
 
     sentence: Sentence
-    semantic_score: float | None = None  # Semantic(q, v): embedding cosine similarity
+    semantic_score: float | None = None  # Semantic(q, v): BI cosine or CE score
     graph_score: float | None = None  # GraphRel(v): e.g. inverse hop-distance from seed
     hop_distance: int | None = None  # 0 = seed, 1, 2, ...; None where not applicable
     embedding: np.ndarray | None = None  # cached sentence vector, for MMR-style redundancy checks
@@ -21,6 +21,7 @@ class Candidate:
     neighbor_keys: tuple[tuple[str, int], ...] | None = None  # graph-adjacent candidates
     conditional_score: float | None = None  # CE(q + anchor, v), for second-hop rescue
     conditional_anchor_key: tuple[str, int] | None = None
+    conditional_validated: bool = False  # True only for a retained Top-L/threshold link
 
 
 @dataclass

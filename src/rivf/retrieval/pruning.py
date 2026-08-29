@@ -12,6 +12,7 @@ VALID_STRATEGIES = (
     "adaptive_mass",
     "coverage_topk",
     "conditional_topk",
+    "graft_pair_topk",
     "graph_rescue_topk",
     "chain_set_topk",
     "threshold",
@@ -244,6 +245,95 @@ def _conditional_topk_select(
         if top_k is not None and len(selected) >= top_k:
             break
     return [candidate.sentence for candidate in selected]
+
+
+def _graft_pair_topk_select(
+    candidates: list[Candidate],
+    budget_tokens: int | None,
+    top_k: int | None,
+    conditional_weight: float,
+    preserve_pairs: bool,
+) -> list[Sentence]:
+    """Select GRAFT evidence units under a hard token ceiling.
+
+    A validated endpoint is represented by the atomic unit ``{anchor, v}``
+    with utility
+
+        node(anchor) + node(v) + beta * link(anchor, v).
+
+    All components are percentile-normalized within the question. Candidates
+    without a validated link remain singleton units scored by node relevance.
+    If an atomic pair does not fit, the entire pair is skipped. Setting
+    ``preserve_pairs=False`` retains the same pair utility but admits only the
+    endpoint, providing a controlled chain-preservation ablation.
+    """
+    if conditional_weight < 0:
+        raise ValueError("conditional_weight must be non-negative")
+    if not candidates:
+        return []
+
+    node_scores = percentile_scores(
+        [candidate.semantic_score or 0.0 for candidate in candidates]
+    )
+    link_scores = optional_percentile_scores(
+        [
+            candidate.conditional_score
+            if candidate.conditional_validated
+            else None
+            for candidate in candidates
+        ]
+    )
+    by_key = {candidate.sentence.key: candidate for candidate in candidates}
+    index_by_key = {
+        candidate.sentence.key: index for index, candidate in enumerate(candidates)
+    }
+    units: list[tuple[float, float, tuple[tuple[str, int], ...]]] = []
+
+    for index, candidate in enumerate(candidates):
+        anchor_key = candidate.conditional_anchor_key
+        if (
+            candidate.conditional_validated
+            and anchor_key is not None
+            and anchor_key in index_by_key
+        ):
+            anchor_index = index_by_key[anchor_key]
+            utility = (
+                node_scores[anchor_index]
+                + node_scores[index]
+                + conditional_weight * link_scores[index]
+            )
+            keys = (
+                (anchor_key, candidate.sentence.key)
+                if preserve_pairs
+                else (candidate.sentence.key,)
+            )
+        else:
+            utility = node_scores[index]
+            keys = (candidate.sentence.key,)
+        units.append((utility, node_scores[index], keys))
+
+    units.sort(key=lambda unit: (unit[0], unit[1]), reverse=True)
+    selected: list[Sentence] = []
+    selected_keys: set[tuple[str, int]] = set()
+    used_tokens = 0
+
+    for _, _, keys in units:
+        additions = [by_key[key] for key in keys if key not in selected_keys]
+        if not additions:
+            continue
+        if top_k is not None and len(selected) + len(additions) > top_k:
+            continue
+        cost = sum(count_tokens(candidate.sentence.text) for candidate in additions)
+        if budget_tokens is not None and used_tokens + cost > budget_tokens:
+            continue
+        for addition in additions:
+            selected.append(addition.sentence)
+            selected_keys.add(addition.sentence.key)
+        used_tokens += cost
+        if top_k is not None and len(selected) >= top_k:
+            break
+
+    return selected
 
 
 def graph_rescue_signals(candidates: list[Candidate], proxy_k: int = 6) -> dict[str, float]:
@@ -612,6 +702,8 @@ def prune(
       passage titles; skips over candidates that do not fit the token budget.
     - "conditional_topk": adds CE(q + anchor, v) for graph-linked second-hop
       rescue and retains the corresponding anchor/evidence pair.
+    - "graft_pair_topk": ranks validated anchor-endpoint units by the GRAFT
+      utility and keeps each pair atomically under the token budget.
     - "graph_rescue_topk": adds a disagreement-gated GraphRel residual only
       to conditional-validated graph Top-K candidates missed by semantic Top-K.
     - "chain_set_topk": reserves one complete pair per conditional anchor,
@@ -672,6 +764,15 @@ def prune(
             budget_tokens,
             top_k,
             conditional_weight,
+        )
+
+    if strategy == "graft_pair_topk":
+        return _graft_pair_topk_select(
+            candidates,
+            budget_tokens,
+            top_k,
+            conditional_weight,
+            preserve_pairs,
         )
 
     if strategy == "graph_rescue_topk":

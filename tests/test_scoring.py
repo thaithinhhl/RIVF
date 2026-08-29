@@ -407,3 +407,69 @@ def test_conditional_rerank_prefers_titles_mentioned_in_question(monkeypatch):
     )
     assert person_a.conditional_anchor_key == film_a.sentence.key
     assert person_b.conditional_anchor_key == film_b.sentence.key
+
+
+def test_conditional_validation_keeps_only_top_l_links_per_anchor(monkeypatch):
+    anchor = _candidate("Anchor", 0, "anchor", semantic=1.0, graph=0.0, hop=0)
+    endpoints = [
+        _candidate(f"E{i}", 0, f"endpoint {i}", semantic=0.1, graph=0.0, hop=1)
+        for i in range(3)
+    ]
+    anchor.neighbor_keys = tuple(endpoint.sentence.key for endpoint in endpoints)
+    item = QAItem(
+        qid="q-top-l",
+        question="Who is linked to Anchor?",
+        answer="",
+        type="bridge",
+        level="",
+        passages=[
+            Passage(title=c.sentence.passage_title, sentences=[c.sentence])
+            for c in [anchor, *endpoints]
+        ],
+        supporting_facts=[],
+    )
+    monkeypatch.setattr(
+        "rivf.retrieval.scoring.rerank_scores",
+        lambda question, texts: [0.9, 0.8, 0.7],
+    )
+    _add_conditional_second_hop_scores(item, [anchor, *endpoints], anchor_n=1, link_top_l=2)
+    assert [endpoint.conditional_validated for endpoint in endpoints] == [True, True, False]
+
+
+def test_graft_pair_utility_includes_anchor_and_preserves_pair():
+    anchor = _candidate("A", 0, "anchor", semantic=1.0, graph=0.0, hop=0)
+    competitor = _candidate("B", 0, "competitor", semantic=0.8, graph=0.0, hop=0)
+    endpoint = _candidate("C", 0, "endpoint", semantic=0.1, graph=0.0, hop=1)
+    endpoint.conditional_score = 1.0
+    endpoint.conditional_anchor_key = anchor.sentence.key
+    endpoint.conditional_validated = True
+    selected = prune(
+        [anchor, competitor, endpoint],
+        strategy="graft_pair_topk",
+        top_k=2,
+        conditional_weight=0.3,
+    )
+    assert [sentence.key for sentence in selected] == [anchor.sentence.key, endpoint.sentence.key]
+
+
+def test_graft_pair_is_skipped_atomically_when_it_does_not_fit():
+    from rivf.eval.efficiency import count_tokens
+
+    anchor = _candidate("A", 0, "anchor", semantic=1.0, graph=0.0, hop=0)
+    endpoint = _candidate("B", 0, "word " * 50, semantic=0.1, graph=0.0, hop=1)
+    fallback = _candidate("C", 0, "fallback", semantic=0.8, graph=0.0, hop=0)
+    endpoint.conditional_score = 1.0
+    endpoint.conditional_anchor_key = anchor.sentence.key
+    endpoint.conditional_validated = True
+    budget = count_tokens(anchor.sentence.text) + count_tokens(fallback.sentence.text)
+    selected = prune(
+        [anchor, endpoint, fallback],
+        strategy="graft_pair_topk",
+        budget_tokens=budget,
+        conditional_weight=0.3,
+    )
+    assert endpoint.sentence.key not in {sentence.key for sentence in selected}
+    assert {sentence.key for sentence in selected} == {
+        anchor.sentence.key,
+        fallback.sentence.key,
+    }

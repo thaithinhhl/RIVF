@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Evidence-Efficient Multi-Hop QA Pipeline</title>
+  <title>GRAFT-v1 Pipeline</title>
   <style>
     :root {
       --bg: #f4f7fb;
@@ -265,10 +265,10 @@
 <body>
 <main>
   <header class="hero">
-    <div class="eyebrow">Current main method · QA mode</div>
-    <h1>Evidence-Efficient Graph Expansion</h1>
-    <p>Đồ thị mở rộng vùng tìm kiếm; cross-encoder và conditional chain scoring chọn evidence. Ours giữ tối đa 200 evidence tokens trước khi gọi LLM.</p>
-    <div class="claim">200 tokens Ours · 600 tokens baseline · HotpotQA + 2WikiMultiHopQA</div>
+    <div class="eyebrow">Canonical main method · GRAFT-v1</div>
+    <h1>Graph Proposal · Semantic Verification · Chain Preservation</h1>
+    <p>Graph chỉ đề xuất candidate chains; cross-encoder xác minh node/link; evidence pairs được giữ nguyên khối dưới hard ceiling 200 tokens.</p>
+    <div class="claim">K=5 · H=2 · M=2 · L=2 · β=0.30 · B=200</div>
   </header>
 
   <section class="diagram" aria-label="Sơ đồ pipeline">
@@ -296,7 +296,7 @@
         <div class="stage-sub">BAAI/bge-m3 semantic similarity</div>
         <div class="card">
           <strong>Question ↔ tất cả sentence nodes</strong>
-          <small>Lấy các sentence gần câu hỏi nhất làm seed set S0.</small>
+          <small>Lấy Top-5 sentence gần câu hỏi nhất làm seed set S0.</small>
         </div>
         <div class="node-map" style="height:260px">
           <span class="edge" style="left:37px;top:50px;width:100px;transform:rotate(21deg)"></span>
@@ -310,7 +310,7 @@
         </div>
         <div class="card question">
           <strong>Output · S0</strong>
-          <small>Seed nodes; số lượng được điều khiển bởi cấu hình.</small>
+          <small>Seed nodes; main method cố định K=5.</small>
         </div>
       </article>
 
@@ -345,26 +345,26 @@
       <div class="arrow">→</div>
 
       <article class="stage orange">
-        <div class="stage-title">04 · Score + route</div>
-        <div class="stage-sub">Hai score được tính, main path dùng CE</div>
+        <div class="stage-title">04 · Chain verification</div>
+        <div class="stage-sub">Node CE + anchor-conditioned link CE</div>
         <div class="score-row">
-          <div class="score sem">Semantic<br>CE(q, v)</div>
-          <div class="score graph">GraphRel<br>PPR / hop</div>
+          <div class="score sem">Node<br>CE(q, v)</div>
+          <div class="score graph">Link<br>CE(q + a, v)</div>
         </div>
 
         <div class="main-path">
           <span class="tag">Main QA path</span>
           <div class="route"><b>Direct comparison</b>Semantic budget-fill; coverage bonus đang bằng 0.</div>
-          <div class="route"><b>Bridge / chained</b>Chọn anchor, rồi tính CE(q + anchor, endpoint).</div>
-          <div class="route"><b>Pair preservation</b>Endpoint được chọn kéo theo anchor tương ứng.</div>
-          <div class="formula">α = 1.0<br>base relevance = semantic</div>
+          <div class="route"><b>Bridge / chained</b>Chọn Top-2 anchors, chấm các cross-passage neighbors.</div>
+          <div class="route"><b>Validated links</b>Chỉ Top-2 conditional links của mỗi anchor được tạo pair.</div>
+          <div class="formula">U({a,v}) = node(a) + node(v) + 0.30·link(a,v)</div>
         </div>
 
         <div class="ablation">
-          <span class="tag">Ablation · not main</span>
-          <div><b>S_sem</b> = Top-K semantic</div>
-          <div><b>S_graph</b> = Top-K GraphRel</div>
-          <div class="formula">disagreement → α(q)<br>α·Sem + (1−α)·Graph</div>
+          <span class="tag">Not main</span>
+          <div><b>PPR / graph score</b></div>
+          <div><b>Adaptive alpha / graph rescue</b></div>
+          <div class="formula">Historical ablations only</div>
         </div>
       </article>
 
@@ -375,7 +375,7 @@
         <div class="stage-sub">Hard budget trước khi gọi LLM</div>
         <div class="card budget">
           <strong>Pair-aware pruning</strong>
-          <small>Giữ chain quan trọng, bỏ candidate nhiễu và không vượt 200 evidence tokens.</small>
+          <small>Nếu pair {anchor, endpoint} không vừa budget, bỏ toàn bộ pair; không giữ endpoint cô lập.</small>
           <div class="token-bar"><span></span></div>
           <div class="token-labels"><span>0</span><span>Ours 200</span><span>Baseline 600</span></div>
         </div>
@@ -388,7 +388,7 @@
           <small>Instruction + question + evidence được group theo passage gốc.</small>
         </div>
         <div class="card question">
-          <strong>gpt-4o-mini</strong>
+          <strong>gpt-4o-mini-2024-07-18</strong>
           <small>temperature = 0</small>
         </div>
         <div class="card output">
@@ -412,7 +412,7 @@
 
   <section class="notes">
     <div class="note"><strong>Node granularity</strong>Passage là nguồn dữ liệu; mỗi sentence mới là một graph node.</div>
-    <div class="note"><strong>Graph trong main method</strong>Giới hạn candidate pool và xác định anchor–endpoint, không chi phối ranking bằng PPR weight.</div>
+    <div class="note"><strong>Graph trong main method</strong>Chỉ proposal candidate/path/neighbor; không được cộng trực tiếp như relevance.</div>
     <div class="note"><strong>Hai token concepts</strong>200 là evidence budget; total prompt tokens còn gồm question, instruction, title và format.</div>
     <div class="note"><strong>Không dùng gold khi inference</strong>Gold supporting facts chỉ phục vụ metrics và oracle analysis.</div>
   </section>

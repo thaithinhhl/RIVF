@@ -1,5 +1,9 @@
 # Bảng số liệu cho paper — Evidence-Efficient Graph Expansion for Multi-Hop QA
 
+> **Không phải GRAFT-v1 final result.** Tài liệu này ghi lại các pilot trước
+> khi pipeline được freeze. Main method hiện tại nằm tại [`pipeline.md`](pipeline.md)
+> và protocol final nằm tại [`experiment_v2.md`](experiment_v2.md).
+
 > **Ghi chú làm việc (không đưa vào paper):** File này gom các bảng "sạch", định dạng sẵn để dán vào bài paper (tiếng Anh, đúng quy ước academic). Nguồn số liệu chi tiết + lịch sử thực nghiệm đầy đủ nằm ở `version1.md`.
 >
 > - **HotpotQA n=1000**: số liệu cũ đã verify, nhưng bảng chính dùng reranker riêng cho Ours nên **không còn được xem là controlled comparison**.

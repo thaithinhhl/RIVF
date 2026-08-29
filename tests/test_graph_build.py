@@ -49,6 +49,18 @@ def test_cross_passage_entity_overlap_on_shared_non_title_entity(item):
     assert g[("Alpha Bridge", 1)][("John Smith", 1)]["kind"] == EDGE_ENTITY_OVERLAP
 
 
+def test_edge_types_can_be_ablated_independently(item):
+    g = build_graph(item, edge_types={EDGE_SAME_PASSAGE})
+    assert g.has_edge(("Alpha Bridge", 0), ("Alpha Bridge", 1))
+    assert not g.has_edge(("Alpha Bridge", 0), ("John Smith", 0))
+
+
+def test_edge_records_all_relation_kinds_when_they_overlap(item):
+    g = build_graph(item)
+    edge = g[("Alpha Bridge", 0)][("John Smith", 0)]
+    assert EDGE_TITLE_MENTION in edge["kinds"]
+
+
 def test_distractor_passage_is_isolated(item):
     # "Random Topic" shares no entities and no title mentions with the other
     # two passages -- the graph should correctly NOT connect it to anything.

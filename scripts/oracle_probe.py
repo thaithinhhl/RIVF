@@ -24,7 +24,11 @@ def main() -> None:
     seed = int(sys.argv[2]) if len(sys.argv) > 2 else 0
     dataset_path = sys.argv[3] if len(sys.argv) > 3 else "data/raw/hotpot_dev_distractor_v1.json"
 
-    items = load_hotpotqa(dataset_path)
+    items = load_hotpotqa(
+        dataset_path,
+        deduplicate_passages=True,
+        invalid_gold_policy="exclude",
+    )
     random.Random(seed).shuffle(items)
     items = items[:n]
 

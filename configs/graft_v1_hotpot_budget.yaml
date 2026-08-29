@@ -1,31 +1,29 @@
-# Canonical GRAFT-v1 retrieval run on the untouched HotpotQA holdout.
-name: graft_v1_hotpot_main_retrieval
+name: graft_v1_hotpot_budget_n1000
 dataset: data/raw/hotpot_dev_distractor_v1.json
 qid_manifest: data/manifests/hotpot_graft_v1_evaluation.json
-n_questions: 7007
-seed: 0
+n_questions: 1000
+seed: 1
 stratified_sampling: true
 deduplicate_passages: true
 invalid_gold_policy: exclude
-call_llm: false
+call_llm: true
+llm_model: gpt-4o-mini-2024-07-18
 include_candidates: false
 methods:
   - name: Dense RAG
     kind: dense_rag
     use_reranker: true
-    budget_tokens: [200, 600]
+    budget_tokens: [100, 150, 200, 300, 400, 600]
   - name: Graph 1-hop
     kind: fixed_hop
     hops: 1
     use_reranker: true
-    graph_edge_types: [same_passage, entity_overlap, title_mention]
-    budget_tokens: [200, 600]
+    budget_tokens: [100, 150, 200, 300, 400, 600]
   - name: Graph 2-hop
     kind: fixed_hop
     hops: 2
     use_reranker: true
-    graph_edge_types: [same_passage, entity_overlap, title_mention]
-    budget_tokens: [200, 600]
+    budget_tokens: [100, 150, 200, 300, 400, 600]
   - name: GRAFT
     kind: selective_graph
     max_hops: 2
@@ -39,5 +37,4 @@ methods:
     conditional_weight: 0.30
     preserve_pairs: true
     alpha: 1.0
-    coverage_bonus: 0.0
-    budget_tokens: 200
+    budget_tokens: [100, 150, 200, 300, 400, 600]

@@ -1,0 +1,26 @@
+# One development QID, no API call. Safe end-to-end implementation smoke test.
+name: graft_v1_smoke
+dataset: data/raw/hotpot_dev_distractor_v1.json
+qid_manifest: data/manifests/hotpot_graft_v1_development.json
+n_questions: 1
+seed: 0
+stratified_sampling: false
+deduplicate_passages: true
+invalid_gold_policy: exclude
+call_llm: false
+include_candidates: true
+methods:
+  - name: GRAFT
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: hop
+    graph_edge_types: [same_passage, entity_overlap, title_mention]
+    strategy: graft
+    conditional_rerank: true
+    conditional_anchor_n: 2
+    conditional_link_top_l: 2
+    conditional_weight: 0.30
+    preserve_pairs: true
+    alpha: 1.0
+    budget_tokens: 200

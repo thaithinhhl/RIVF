@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import random
+import subprocess
 import time
 from pathlib import Path
 from typing import Iterator
@@ -24,8 +25,9 @@ from rivf.data.schema import QAItem, Sentence
 from rivf.eval.answer_metrics import answer_metrics
 from rivf.eval.efficiency import count_tokens
 from rivf.eval.supporting_facts import supporting_fact_metrics
-from rivf.generation.llm_client import DEFAULT_MODEL, generate_answer
+from rivf.generation.llm_client import DEFAULT_MODEL, generate_answer_with_metadata
 from rivf.generation.prompts import build_prompt
+from rivf.graph.build import ALL_EDGE_TYPES
 from rivf.methods.base import Candidate
 from rivf.retrieval.adaptive_alpha import (
     estimate_alpha,
@@ -33,13 +35,15 @@ from rivf.retrieval.adaptive_alpha import (
     estimate_alpha_semantic_first,
     semantic_first_signals,
 )
+from rivf.retrieval.embeddings import MODEL_NAME as EMBEDDING_MODEL
 from rivf.retrieval.embeddings import cosine_sim, embed, embed_batch
-from rivf.retrieval.pruning import graph_rescue_signals, prune
+from rivf.retrieval.pruning import VALID_STRATEGIES, graph_rescue_signals, prune
 from rivf.retrieval.question_router import (
     BRIDGE_COMPARISON,
     DIRECT_COMPARISON,
     route_question,
 )
+from rivf.retrieval.reranker import MODEL_NAME as RERANKER_MODEL
 from rivf.retrieval.reranker import rerank_scores
 from rivf.retrieval.scoring import generate_candidates
 
@@ -83,6 +87,7 @@ def _candidate_to_dict(c: Candidate) -> dict:
         "neighbor_keys": c.neighbor_keys,
         "conditional_score": c.conditional_score,
         "conditional_anchor_key": c.conditional_anchor_key,
+        "conditional_validated": c.conditional_validated,
         "text_tokens": count_tokens(c.sentence.text),
     }
 
@@ -94,18 +99,20 @@ def _generate_fields(prompt: str, model: str, gold_answer: str) -> dict:
     start = time.perf_counter()
     for attempt in range(7):
         try:
-            prediction = generate_answer(prompt, model=model)
+            generation = generate_answer_with_metadata(prompt, model=model)
             break
         except RateLimitError:
             if attempt == 6:
                 raise
             time.sleep(min(2 ** (attempt + 1), 30))
+    prediction = generation["prediction"]
     return {
         "llm_latency_s": time.perf_counter() - start,
         "llm_model": model,
         "prompt_tokens": count_tokens(prompt),
         "output_tokens": count_tokens(prediction),
         "prediction": prediction,
+        **{key: value for key, value in generation.items() if key != "prediction"},
         **answer_metrics(prediction, gold_answer),
     }
 
@@ -134,7 +141,12 @@ def _run_dense_rag(item: QAItem, cfg: dict) -> Iterator[RunnerRow]:
 def _run_fixed_hop(item: QAItem, cfg: dict) -> Iterator[RunnerRow]:
     candidate_start = time.perf_counter()
     candidates = generate_candidates(
-        item, max_hops=cfg["hops"], use_reranker=cfg.get("use_reranker", False)
+        item,
+        max_hops=cfg["hops"],
+        use_reranker=cfg.get("use_reranker", False),
+        graph_edge_types=set(cfg["graph_edge_types"])
+        if cfg.get("graph_edge_types") is not None
+        else None,
     )
     candidate_latency = time.perf_counter() - candidate_start
     for budget in _as_list(cfg.get("budget_tokens", [None])):
@@ -149,7 +161,7 @@ def _run_selective_graph(item: QAItem, cfg: dict) -> Iterator[RunnerRow]:
     # ONCE per question here, then every (alpha, budget) combo below is a
     # cheap re-sort/re-slice of the same cached component scores.
     strategy = cfg.get("strategy", "topk")
-    routed = strategy in ("routed_topk", "routed_graph_rescue")
+    routed = strategy in ("graft", "routed_topk", "routed_graph_rescue")
     graph_rescue = strategy in ("routed_graph_rescue", "graph_rescue_topk")
     route = route_question(item.question) if routed else None
     bridge_policy = cfg.get("bridge_policy", "single_chain")
@@ -157,6 +169,8 @@ def _run_selective_graph(item: QAItem, cfg: dict) -> Iterator[RunnerRow]:
         raise ValueError("bridge_policy must be 'single_chain' or 'dual_chain'")
     if route == DIRECT_COMPARISON:
         effective_strategy = "coverage_topk"
+    elif strategy == "graft":
+        effective_strategy = "graft_pair_topk"
     elif route == BRIDGE_COMPARISON and bridge_policy == "dual_chain":
         effective_strategy = "chain_set_topk"
     elif graph_rescue:
@@ -174,11 +188,21 @@ def _run_selective_graph(item: QAItem, cfg: dict) -> Iterator[RunnerRow]:
         if route == BRIDGE_COMPARISON and bridge_policy == "dual_chain"
         else False
     )
+    conditional_rerank = cfg.get("conditional_rerank", False)
+    if strategy == "graft" and route == DIRECT_COMPARISON:
+        conditional_rerank = False
+    configured_edge_types = cfg.get("graph_edge_types")
+    graph_edge_types = (
+        tuple(configured_edge_types) if configured_edge_types is not None else None
+    )
     cache_key = (
         cfg.get("max_hops", 2), cfg.get("use_reranker", False),
-        cfg.get("graph_rel_method", "hop"), cfg.get("conditional_rerank", False),
+        cfg.get("graph_rel_method", "hop"), conditional_rerank,
         conditional_anchor_n, prefer_mentioned_anchors,
         cfg.get("query_weighted_ppr", False), cfg.get("ppr_seed_temperature", 0.20),
+        graph_edge_types,
+        cfg.get("conditional_link_top_l", 2),
+        cfg.get("conditional_link_min_score"),
     )
     candidate_cache = cfg.get("_candidate_cache")
     cached = candidate_cache.get(cache_key) if candidate_cache is not None else None
@@ -189,11 +213,14 @@ def _run_selective_graph(item: QAItem, cfg: dict) -> Iterator[RunnerRow]:
             max_hops=cfg.get("max_hops", 2),
             use_reranker=cfg.get("use_reranker", False),
             graph_rel_method=cfg.get("graph_rel_method", "hop"),
-            conditional_rerank=cfg.get("conditional_rerank", False),
+            conditional_rerank=conditional_rerank,
             conditional_anchor_n=conditional_anchor_n,
             prefer_mentioned_anchors=prefer_mentioned_anchors,
             query_weighted_ppr=cfg.get("query_weighted_ppr", False),
             ppr_seed_temperature=cfg.get("ppr_seed_temperature", 0.20),
+            graph_edge_types=set(graph_edge_types) if graph_edge_types is not None else None,
+            conditional_link_top_l=cfg.get("conditional_link_top_l", 2),
+            conditional_link_min_score=cfg.get("conditional_link_min_score"),
         )
         candidate_latency = time.perf_counter() - candidate_start
         if candidate_cache is not None:
@@ -362,13 +389,124 @@ def _load_done_keys(out_path: Path) -> set[tuple]:
     return done
 
 
+def _sha256_file(path: str | Path) -> str:
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _git_revision() -> str | None:
+    try:
+        return subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+
+
+def _git_dirty() -> bool | None:
+    try:
+        return bool(
+            subprocess.run(
+                ["git", "status", "--porcelain"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+
+
+def _filter_qid_manifest(
+    items: list[QAItem],
+    manifest_path: str | Path,
+    dataset_sha256: str,
+) -> list[QAItem]:
+    payload = json.loads(Path(manifest_path).read_text())
+    qids = payload["qids"] if isinstance(payload, dict) else payload
+    if isinstance(payload, dict) and payload.get("dataset_sha256") != dataset_sha256:
+        raise ValueError(f"dataset checksum does not match manifest {manifest_path}")
+    if len(qids) != len(set(qids)):
+        raise ValueError(f"duplicate QIDs in manifest {manifest_path}")
+    by_qid = {item.qid: item for item in items}
+    missing = [qid for qid in qids if qid not in by_qid]
+    if missing:
+        raise ValueError(f"manifest {manifest_path} contains {len(missing)} unknown QIDs")
+    return [by_qid[qid] for qid in qids]
+
+
+def preflight(config_path: str) -> dict:
+    """Validate config, dataset hygiene and manifests without loading models."""
+    config = yaml.safe_load(Path(config_path).read_text())
+    dataset_path = config.get("dataset", "data/raw/hotpot_dev_distractor_v1.json")
+    dataset_sha256 = _sha256_file(dataset_path)
+    items = load_hotpotqa(
+        dataset_path,
+        deduplicate_passages=config.get("deduplicate_passages", False),
+        invalid_gold_policy=config.get("invalid_gold_policy", "keep"),
+    )
+    if config.get("qid_manifest"):
+        items = _filter_qid_manifest(items, config["qid_manifest"], dataset_sha256)
+    n_questions = config["n_questions"]
+    if n_questions > len(items):
+        raise ValueError(f"requested {n_questions} questions but only {len(items)} are available")
+
+    names = [method["name"] for method in config["methods"]]
+    if len(names) != len(set(names)):
+        raise ValueError("method names must be unique within one config")
+    for method in config["methods"]:
+        if method["kind"] not in _RUNNERS:
+            raise ValueError(f"unknown method kind: {method['kind']}")
+        strategy = method.get("strategy", "topk")
+        if strategy not in set(VALID_STRATEGIES) | {"graft", "routed_topk", "routed_graph_rescue"}:
+            raise ValueError(f"unknown runner strategy: {strategy}")
+        edge_types = set(method.get("graph_edge_types", ALL_EDGE_TYPES))
+        if edge_types - ALL_EDGE_TYPES:
+            raise ValueError(f"unknown edge types in method {method['name']}")
+
+    rows_per_question = sum(len(_expected_keys("preflight", method)) for method in config["methods"])
+    report = {
+        "config": config_path,
+        "dataset": dataset_path,
+        "dataset_sha256": dataset_sha256,
+        "available_qids": len(items),
+        "selected_qids": n_questions,
+        "methods": len(config["methods"]),
+        "rows_per_question": rows_per_question,
+        "expected_rows": n_questions * rows_per_question,
+        "expected_llm_calls": n_questions * rows_per_question if config.get("call_llm", False) else 0,
+        "git_revision": _git_revision(),
+        "git_dirty": _git_dirty(),
+    }
+    print(json.dumps(report, indent=2))
+    return report
+
+
 def run(config_path: str) -> Path:
     config_text = Path(config_path).read_text()
     config = yaml.safe_load(config_text)
     config_sha256 = hashlib.sha256(config_text.encode()).hexdigest()
     dataset_path = config.get("dataset", "data/raw/hotpot_dev_distractor_v1.json")
     sample_seed = config.get("seed", 0)
-    items = load_hotpotqa(dataset_path)
+    dataset_sha256 = _sha256_file(dataset_path)
+    items = load_hotpotqa(
+        dataset_path,
+        deduplicate_passages=config.get("deduplicate_passages", False),
+        invalid_gold_policy=config.get("invalid_gold_policy", "keep"),
+    )
+    qid_manifest = config.get("qid_manifest")
+    if qid_manifest:
+        items = _filter_qid_manifest(items, qid_manifest, dataset_sha256)
+    if config["n_questions"] > len(items):
+        raise ValueError(
+            f"requested {config['n_questions']} questions but only {len(items)} are available"
+        )
     items = _sample_items(
         items,
         config["n_questions"],
@@ -378,6 +516,8 @@ def run(config_path: str) -> Path:
 
     call_llm = config.get("call_llm", False) and os.environ.get("RIVF_SKIP_LLM") != "1"
     llm_model = config.get("llm_model", DEFAULT_MODEL)
+    code_revision = _git_revision()
+    git_dirty = _git_dirty()
     # A dense (alpha x budget) grid search re-slices the SAME candidate list
     # many times per question -- serializing it on every row would mostly be
     # redundant bytes, so wide sweeps can turn it off.
@@ -428,7 +568,13 @@ def run(config_path: str) -> Path:
                         "method": method_cfg["name"],
                         "dataset": dataset_path,
                         "sample_seed": sample_seed,
+                        "qid_manifest": qid_manifest,
+                        "dataset_sha256": dataset_sha256,
                         "config_sha256": config_sha256,
+                        "code_revision": code_revision,
+                        "git_dirty": git_dirty,
+                        "embedding_model": EMBEDDING_MODEL,
+                        "reranker_model": RERANKER_MODEL if method_cfg.get("use_reranker", False) else None,
                         "use_reranker": method_cfg.get("use_reranker", False),
                         **run_params,
                         "num_selected": len(selected),
@@ -478,4 +624,6 @@ def run(config_path: str) -> Path:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("config")
-    run(parser.parse_args().config)
+    parser.add_argument("--preflight", action="store_true")
+    args = parser.parse_args()
+    preflight(args.config) if args.preflight else run(args.config)

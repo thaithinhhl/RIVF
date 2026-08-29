@@ -9,6 +9,9 @@ from rivf.graph.entities import extract_entities, mentions_title
 EDGE_SAME_PASSAGE = "same_passage"
 EDGE_ENTITY_OVERLAP = "entity_overlap"
 EDGE_TITLE_MENTION = "title_mention"
+ALL_EDGE_TYPES = frozenset(
+    {EDGE_SAME_PASSAGE, EDGE_ENTITY_OVERLAP, EDGE_TITLE_MENTION}
+)
 
 # Title-mention gets the highest weight: HotpotQA bridge questions are built from
 # Wikipedia hyperlinks, and anchor text ~= article title, so a sentence naming
@@ -20,36 +23,48 @@ _EDGE_WEIGHT = {
     EDGE_TITLE_MENTION: 2.0,
 }
 
-def build_graph(item: QAItem) -> nx.Graph:
+def build_graph(
+    item: QAItem,
+    edge_types: set[str] | frozenset[str] | None = None,
+) -> nx.Graph:
     """Per-question graph: nodes = every sentence in the 10 distractor
     paragraphs, edges = same-passage adjacency + cross-passage entity overlap
     + cross-passage title mention. Rebuilt fresh per question -- no persistent
     store, since each question's graph is tiny (~40-60 nodes)."""
+    enabled = ALL_EDGE_TYPES if edge_types is None else frozenset(edge_types)
+    unknown = enabled - ALL_EDGE_TYPES
+    if unknown:
+        raise ValueError(f"unknown graph edge types: {sorted(unknown)}")
+
     g = nx.Graph()
     sentences = item.all_sentences()
     for s in sentences:
         g.add_node(s.key, sentence=s)
 
-    for passage in item.passages:
-        for a, b in itertools.pairwise(passage.sentences):
-            _add_edge(g, a.key, b.key, EDGE_SAME_PASSAGE)
+    if EDGE_SAME_PASSAGE in enabled:
+        for passage in item.passages:
+            for a, b in itertools.pairwise(passage.sentences):
+                _add_edge(g, a.key, b.key, EDGE_SAME_PASSAGE)
 
-    entities_by_key = {s.key: extract_entities(s.text) for s in sentences}
-    sentences_by_title: dict[str, list[Sentence]] = {p.title: p.sentences for p in item.passages}
-
-    for a, b in itertools.combinations(sentences, 2):
-        if a.passage_title == b.passage_title:
-            continue
-        if entities_by_key[a.key] & entities_by_key[b.key]:
-            _add_edge(g, a.key, b.key, EDGE_ENTITY_OVERLAP)
-
-    for s in sentences:
-        for title, title_sentences in sentences_by_title.items():
-            if title == s.passage_title:
+    if EDGE_ENTITY_OVERLAP in enabled:
+        entities_by_key = {s.key: extract_entities(s.text) for s in sentences}
+        for a, b in itertools.combinations(sentences, 2):
+            if a.passage_title == b.passage_title:
                 continue
-            if mentions_title(s.text, title):
-                for other in title_sentences:
-                    _add_edge(g, s.key, other.key, EDGE_TITLE_MENTION)
+            if entities_by_key[a.key] & entities_by_key[b.key]:
+                _add_edge(g, a.key, b.key, EDGE_ENTITY_OVERLAP)
+
+    if EDGE_TITLE_MENTION in enabled:
+        sentences_by_title: dict[str, list[Sentence]] = {
+            p.title: p.sentences for p in item.passages
+        }
+        for s in sentences:
+            for title, title_sentences in sentences_by_title.items():
+                if title == s.passage_title:
+                    continue
+                if mentions_title(s.text, title):
+                    for other in title_sentences:
+                        _add_edge(g, s.key, other.key, EDGE_TITLE_MENTION)
 
     return g
 
@@ -121,8 +136,11 @@ def personalized_pagerank_scores(
 def _add_edge(g: nx.Graph, u: tuple, v: tuple, kind: str) -> None:
     weight = _EDGE_WEIGHT[kind]
     if g.has_edge(u, v):
+        kinds = set(g[u][v].get("kinds", (g[u][v]["kind"],)))
+        kinds.add(kind)
+        g[u][v]["kinds"] = tuple(sorted(kinds))
         if weight > g[u][v]["weight"]:
             g[u][v]["kind"] = kind
             g[u][v]["weight"] = weight
     else:
-        g.add_edge(u, v, kind=kind, weight=weight)
+        g.add_edge(u, v, kind=kind, kinds=(kind,), weight=weight)

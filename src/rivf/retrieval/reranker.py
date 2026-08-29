@@ -1,7 +1,7 @@
 import torch
 from sentence_transformers import CrossEncoder
 
-_MODEL_NAME = "BAAI/bge-reranker-v2-m3"
+MODEL_NAME = "BAAI/bge-reranker-v2-m3"
 _model: CrossEncoder | None = None
 _score_cache: dict[tuple[str, str], float] = {}
 
@@ -10,7 +10,7 @@ def _get_model() -> CrossEncoder:
     global _model
     if _model is None:
         device = "mps" if torch.backends.mps.is_available() else "cpu"
-        _model = CrossEncoder(_MODEL_NAME, device=device)
+        _model = CrossEncoder(MODEL_NAME, device=device)
     return _model
 
 

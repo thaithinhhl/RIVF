@@ -6,6 +6,25 @@ build-backend = "setuptools.build_meta"
 name = "rivf"
 version = "0.1.0"
 requires-python = ">=3.12"
+dependencies = [
+  "matplotlib>=3.9,<4",
+  "networkx>=3.3,<4",
+  "numpy>=1.26,<3",
+  "openai>=1.40,<2",
+  "pandas>=2.2,<3",
+  "python-dotenv>=1.0,<2",
+  "pyyaml>=6.0,<7",
+  "scikit-learn>=1.4,<2",
+  "sentence-transformers>=3.0,<6",
+  "spacy>=3.7,<4",
+  "tiktoken>=0.7,<1",
+  "torch>=2.2,<3",
+  "tqdm>=4.66,<5",
+  "transformers>=4.41,<6",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

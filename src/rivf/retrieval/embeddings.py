@@ -7,7 +7,7 @@ import numpy as np
 import torch
 from sentence_transformers import SentenceTransformer
 
-_MODEL_NAME = "BAAI/bge-m3"
+MODEL_NAME = "BAAI/bge-m3"
 _CACHE_PATH = Path("data/processed/embedding_cache.pkl")
 
 _model: SentenceTransformer | None = None
@@ -41,7 +41,7 @@ def _get_model() -> SentenceTransformer:
     global _model
     if _model is None:
         device = "mps" if torch.backends.mps.is_available() else "cpu"
-        _model = SentenceTransformer(_MODEL_NAME, device=device)
+        _model = SentenceTransformer(MODEL_NAME, device=device)
     return _model
 
 

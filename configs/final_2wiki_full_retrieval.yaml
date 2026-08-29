@@ -1,38 +1,43 @@
-# Full 2WikiMultiHopQA dev retrieval evaluation. Baselines may use 600
-# selected-evidence tokens; QA-mode Ours remains hard-capped at 200.
-name: final_2wiki_full_retrieval
+# Canonical GRAFT-v1 retrieval run on the untouched 2Wiki holdout.
+name: graft_v1_2wiki_main_retrieval
 dataset: data/raw/2wikimultihopqa_dev.json
-n_questions: 12576
+qid_manifest: data/manifests/2wiki_graft_v1_evaluation.json
+n_questions: 12108
 seed: 0
+stratified_sampling: true
+deduplicate_passages: true
+invalid_gold_policy: exclude
 call_llm: false
 include_candidates: false
 methods:
-  - name: dense_bi_600
-    kind: dense_rag
-    budget_tokens: 600
-  - name: dense_ce_600
+  - name: Dense RAG
     kind: dense_rag
     use_reranker: true
-    budget_tokens: 600
-  - name: graph_1hop_ce_600
+    budget_tokens: [200, 600]
+  - name: Graph 1-hop
     kind: fixed_hop
     hops: 1
     use_reranker: true
-    budget_tokens: 600
-  - name: graph_2hop_ce_600
+    graph_edge_types: [same_passage, entity_overlap, title_mention]
+    budget_tokens: [200, 600]
+  - name: Graph 2-hop
     kind: fixed_hop
     hops: 2
     use_reranker: true
-    budget_tokens: 600
-  - name: ours_qa_200
+    graph_edge_types: [same_passage, entity_overlap, title_mention]
+    budget_tokens: [200, 600]
+  - name: GRAFT
     kind: selective_graph
     max_hops: 2
     use_reranker: true
-    graph_rel_method: ppr
+    graph_rel_method: hop
+    graph_edge_types: [same_passage, entity_overlap, title_mention]
+    strategy: graft
     conditional_rerank: true
-    conditional_anchor_n: 1
-    bridge_policy: single_chain
-    strategy: routed_topk
+    conditional_anchor_n: 2
+    conditional_link_top_l: 2
     conditional_weight: 0.30
+    preserve_pairs: true
     alpha: 1.0
+    coverage_bonus: 0.0
     budget_tokens: 200

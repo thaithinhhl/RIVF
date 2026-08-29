@@ -1,416 +1,281 @@
-# Pipeline kỹ thuật của hệ thống
+# GRAFT-v1 — Canonical Technical Pipeline
 
-Tài liệu này mô tả **pipeline đang được dùng cho kết quả chính**, không mô tả phương án adaptive semantic–graph fusion cũ như thể đó là main method.
+Tài liệu này là đặc tả duy nhất của main method. Các biến thể PPR,
+semantic–graph fusion và graph-rescue trong config cũ chỉ là lịch sử/ablation,
+không phải GRAFT-v1.
 
-- Minh hoạ trực quan: [`pipeline.html`](pipeline.html)
-- Kế hoạch thí nghiệm: [`experiment.md`](experiment.md)
-- Kết quả theo Research Question: [`version1.md`](version1.md)
+## 1. Bài toán và phạm vi
 
-## 1. Mục tiêu
+Input là câu hỏi `q` và candidate passages `P` do benchmark cung cấp. Hệ thống
+không truy vấn toàn bộ Wikipedia. Vì vậy task được báo cáo là **multi-hop
+evidence selection trên provided candidate passages**, sau đó sinh câu trả lời.
 
-Input của hệ thống là một câu hỏi multi-hop QA và tập passage đi kèm. Hệ thống phải chọn một context nhỏ, tối đa **200 evidence tokens**, nhưng vẫn chứa đủ chuỗi bằng chứng để LLM trả lời.
+Main benchmarks:
 
-```text
-Question + passages
-    → sentence graph
-    → seed retrieval
-    → graph expansion ≤2-hop
-    → semantic và structural signals
-    → label-free routing
-    → conditional evidence selection
-    → pair-aware pruning ≤200 tokens
-    → LLM answer
-```
+- HotpotQA dev-distractor.
+- 2WikiMultiHopQA dev.
 
-## 2. Phạm vi corpus và đơn vị node
+Raw data không bị sửa. Trước khi chạy, loader gộp passage trùng hoàn toàn và
+loại QID có supporting-fact reference không tồn tại để mọi method có cùng
+metric ceiling và cùng candidate identities.
 
-Trong thiết lập HotpotQA distractor và 2Wiki hiện tại, mỗi `QAItem` đã chứa một tập passage ứng viên. Graph được xây **riêng cho từng câu hỏi** trên tập passage này; pipeline chưa truy vấn một index toàn bộ Wikipedia.
+## 2. Ba stage của GRAFT
 
 ```text
-Dataset
-└── QAItem
-    ├── question
-    ├── passages
-    │   ├── Passage A
-    │   │   ├── Sentence A0
-    │   │   └── Sentence A1
-    │   └── Passage B
-    │       ├── Sentence B0
-    │       └── Sentence B1
-    └── gold answer/supporting facts (chỉ dùng khi đánh giá)
+Question + candidate passages
+    ↓
+1. Graph-Guided Chain Proposal
+   sentence graph → semantic seeds → expansion ≤H hops
+    ↓
+2. Query-Conditioned Chain Verification
+   node CE → anchors → conditional link CE → validated links
+    ↓
+3. Chain-Preserving Evidence Compression
+   singleton/pair utilities → atomic budgeted selection
+    ↓
+Compressed evidence → GPT-4o mini → answer
 ```
 
-Passage là nguồn dữ liệu; **mỗi sentence mới là một graph node**:
-
-```python
-Sentence(
-    passage_title="Inception",
-    sent_id=0,
-    text="Inception was directed by Christopher Nolan."
-)
-```
-
-Node key là `(passage_title, sent_id)`. Khi embedding/reranking, sentence được biểu diễn dưới dạng:
+Nguyên lý trung tâm:
 
 ```text
-Inception: Inception was directed by Christopher Nolan.
+graph proposes → semantics verifies → budgeted selection preserves
 ```
 
-Title prefix giúp các câu chứa đại từ hoặc tham chiếu ngầm vẫn có ngữ cảnh entity. Khi đếm evidence tokens, hệ thống chỉ đếm `sentence.text`; title và instruction được tính riêng trong `prompt_tokens`.
+Graph connectivity không được coi là relevance. Graph chỉ đề xuất candidate và
+quan hệ cấu trúc; cross-encoder quyết định query-conditioned relevance.
 
-## 3. Bước 1 — Seed retrieval
+## 3. Hyperparameter được freeze
 
-### Input
+| Ký hiệu | Ý nghĩa | Main value |
+|---|---|---:|
+| `K` | Số semantic seeds | 5 |
+| `H` | Số hop expansion tối đa | 2 |
+| `M` | Số semantic anchors | 2 |
+| `L` | Validated links tối đa cho mỗi anchor | 2 |
+| `β` | Trọng số conditional link score | 0.30 |
+| `B` | Hard evidence-token ceiling | 200 |
 
-- Câu hỏi `q`.
-- Toàn bộ sentence nodes trong passage set của câu hỏi.
+Các giá trị này giống nhau trên HotpotQA và 2Wiki. Mọi tuning/sensitivity phải
+dùng development manifest, không dùng evaluation manifest.
 
-### Xử lý
+## 4. Stage 1 — Graph-Guided Chain Proposal
 
-BAAI/bge-m3 tạo embedding cho câu hỏi và `title: sentence`. Hệ thống tính cosine similarity:
+### 4.1 Sentence nodes
+
+Mỗi sentence là một node:
 
 ```text
-SeedScore(q, v) = cosine(Embed(q), Embed(title(v) + text(v)))
+v = (passage_title, sent_id, text)
 ```
 
-Sau đó lấy Top-5 sentence nodes theo mặc định:
+Biểu diễn đưa vào embedding/reranker là `title: sentence`. Evidence budget chỉ
+đếm `sentence.text`; prompt tokens được log riêng.
+
+### 4.2 Evidence graph
+
+Xây graph vô hướng riêng cho từng câu hỏi:
 
 ```text
-S0 = {s1, s2, s3, s4, s5}
+G = (V, E_G)
 ```
 
-### Output
+Ba edge type:
 
-`S0` là seed set dùng làm nguồn cho multi-source graph traversal. Seed retrieval luôn dùng bi-encoder vì bước này phải chấm toàn bộ sentence set.
-
-## 4. Bước 2 — Xây graph
-
-Graph vô hướng được xây mới cho từng câu hỏi.
-
-### Nodes
-
-```text
-V = tất cả sentence trong các passage của QAItem
-```
-
-### Edges
-
-| Edge | Điều kiện nối | Vai trò |
-|---|---|---|
-| `same_passage` | Hai sentence liền nhau trong cùng passage | Giữ mạch nội dung cục bộ |
-| `entity_overlap` | Hai sentence khác passage có entity giao nhau | Nối evidence qua entity chung |
-| `title_mention` | Sentence ở passage A nhắc title của passage B | Tạo bridge giữa hai bài viết |
-
-`title_mention` có edge weight 2; hai edge còn lại có weight 1. BFS expansion đếm hop không trọng số, còn PPR có sử dụng edge weight.
-
-Gold answer và supporting facts không được dùng để tạo node, edge hoặc seed.
-
-## 5. Bước 3 — Graph expansion
-
-Hệ thống chạy multi-source BFS từ năm seed nodes và giữ node có khoảng cách tối đa hai cạnh:
-
-```text
-C = {v ∈ V | distance(v, S0) ≤ 2}
-```
-
-Candidate pool gồm:
-
-- Các seed, hop distance 0.
-- Các node 1-hop.
-- Các node 2-hop.
-
-Mỗi candidate lưu:
-
-- `hop_distance`.
-- Một shortest-path parent/path từ seed.
-- Các graph neighbors nằm trong candidate pool.
-- `semantic_score`.
-- `graph_score`.
-- Conditional score/anchor nếu có.
-
-Graph expansion là **candidate generator**: node ngoài phạm vi hai hop không được rerank hoặc đưa vào context.
-
-## 6. Bước 4 — Tính Semantic và GraphRel
-
-Sau expansion, hệ thống vẫn tính cả hai tín hiệu cho mọi candidate.
-
-### 6.1 Semantic score
-
-Ở main pipeline, cross-encoder BAAI/bge-reranker-v2-m3 chấm trực tiếp từng cặp:
-
-```text
-Semantic(q, v) = CrossEncoder(q, title(v) + text(v))
-```
-
-Cross-encoder chỉ chạy trên candidate pool đã được graph giới hạn, không quét toàn bộ corpus.
-
-### 6.2 Graph score
-
-Code hỗ trợ hai cách:
-
-```text
-HopGraphRel(v) = 1 / (1 + hop_distance(v, S0))
-```
-
-hoặc Personalized PageRank:
-
-```text
-PPR(v) = PageRank mass với restart distribution đặt đều trên seeds
-GraphRel(v) = PPR(v) / max_{u∈C} PPR(u)
-```
-
-Main configs hiện đặt `graph_rel_method: ppr`, nên `graph_score` vẫn được tính và lưu.
-
-### 6.3 Graph score có tham gia main ranking không?
-
-Main configs đặt:
-
-```yaml
-alpha: 1.0
-adaptive_alpha: false
-```
-
-Do đó base relevance là:
-
-```text
-Base(v) = α·Semantic(v) + (1−α)·GraphRel(v)
-        = Semantic(v)
-```
-
-Graph vẫn được sử dụng để tạo candidate pool, xác định neighbor/path và xây anchor–endpoint pair. Chỉ có giá trị `graph_score` không được cộng trực tiếp vào main ranking.
-
-Lý do: controlled alpha sweep cho thấy semantic-only tốt hơn linear blend trên cả Hotpot và 2Wiki; graph proximity/PPR thường tăng điểm cho seed hoặc node trung tâm nhưng không chắc liên quan tới câu hỏi.
-
-## 7. Bước 5 — Label-free question router
-
-Router chỉ đọc text câu hỏi, không sử dụng trường `item.type` hoặc gold label. Nó chọn một trong ba route:
-
-| Route | Ý nghĩa | Selection strategy |
-|---|---|---|
-| `direct_comparison` | So sánh trực tiếp các entity/thuộc tính nêu trong câu hỏi | `coverage_topk` |
-| `bridge_comparison` | Mỗi phía cần tìm intermediate relation rồi mới so sánh | Single-chain mặc định; dual-chain là mode tùy chọn |
-| `chained_reasoning` | Câu hỏi cần theo chuỗi quan hệ qua bridge entity | `conditional_topk` |
-
-Router là heuristic label-free dựa trên pattern của câu hỏi. Việc đánh giá theo dataset question type chỉ xảy ra sau inference.
-
-## 8. Bước 6 — Conditional second-hop scoring
-
-Đây là tín hiệu thay thế an toàn hơn cho việc cộng PPR trực tiếp vào relevance.
-
-### 8.1 Chọn anchor
-
-Trong QA mode chính, hệ thống lấy một candidate semantic mạnh từ một passage làm anchor:
-
-```text
-a* = argmax Semantic(q, a)
-```
-
-`conditional_anchor_n=1` trong main configs.
-
-### 8.2 Tìm endpoint liên kết
-
-Chỉ các graph neighbors khác passage với anchor mới được chấm conditional:
-
-```text
-N_cross(a*) = {v | (a*,v) ∈ E và title(v) ≠ title(a*)}
-```
-
-### 8.3 Conditional cross-encoder
-
-```text
-Conditional(q, a*, v)
-  = CrossEncoder(
-      question + "Known evidence:" + text(a*),
-      title(v) + text(v)
-    )
-```
-
-Điều này giúp một answer-bearing endpoint có semantic similarity thấp với câu hỏi gốc vẫn được cứu khi nó hợp lý sau anchor.
-
-Mỗi endpoint lưu `conditional_score` và `conditional_anchor_key` tốt nhất.
-
-## 9. Bước 7 — Route-specific pruning
-
-### 9.1 Direct comparison
-
-`coverage_topk` percentile-normalize base relevance rồi greedily chọn candidate vừa budget. Main configs hiện không đặt `coverage_bonus`, nên giá trị mặc định bằng 0: route này thực chất là **semantic budget-fill có skip-over**, chưa có bonus đa dạng passage.
-
-### 9.2 Chained reasoning và bridge QA mode
-
-`conditional_topk` tính:
-
-```text
-FinalRank(v)
-  = percentile(Base(v))
-  + 0.30 × percentile(Conditional(v))
-```
-
-Nếu một endpoint có conditional anchor, selector cố đưa cả cặp vào context:
-
-```text
-pair(v) = {anchor(v), v}
-```
-
-Nếu cả cặp không vừa budget, cặp đó bị bỏ thay vì giữ một endpoint cô lập.
-
-### 9.3 Dual-chain evidence-recall mode
-
-Với `bridge_policy: dual_chain`, `chain_set_topk` cố dành budget cho một pair của mỗi anchor trước khi lấp phần còn lại. Chế độ này tăng 2Wiki SP Recall nhưng giảm Answer F1, nên không dùng làm headline QA method.
-
-### 9.4 Hard token ceiling
-
-Token được đếm bằng tokenizer `cl100k_base`:
-
-```text
-Σ TokenCount(sentence.text) ≤ 200
-```
-
-Selector bỏ qua candidate/pair không vừa phần budget còn lại và tiếp tục xét candidate sau nếu strategy hỗ trợ budget filling.
-
-## 10. Bước 8 — Context và prompt
-
-Main routed configs hiện không bật `chain_aware_prompt`. Selected sentences được group lại theo passage title và thứ tự sentence gốc:
-
-```text
-[Passage title A]
-selected sentence A0
-selected sentence A2
-
-[Passage title B]
-selected sentence B1
-```
-
-Chain-aware serialization theo selection order tồn tại cho ablation và có thể thêm reasoning hint theo route, nhưng không thuộc main result hiện tại.
-
-Prompt yêu cầu:
-
-- Chỉ dùng context được cung cấp.
-- Yes/no trả đúng `yes` hoặc `no`.
-- Câu hỏi khác trả lời bằng exact name/phrase ngắn nhất.
-
-## 11. Bước 9 — Answer generation
-
-```text
-Answer = gpt-4o-mini(prompt, temperature=0)
-```
-
-Cùng answer model và prompt policy phải được dùng cho mọi method trong cùng experiment. Thay đổi retrieval method không được đồng thời thay đổi LLM hoặc instruction.
-
-## 12. Bước 10 — Logging và evaluation
-
-Mỗi result row cần ghi:
-
-- Dataset, QID, method và seed.
-- Budget, alpha và computed route.
-- Selected sentence keys/text.
-- SP Recall, SP Precision và SP F1.
-- Answer EM và Answer F1.
-- Evidence tokens và số nodes.
-- Prompt tokens cho các run mới.
-- Retrieval/selection latency.
-
-Ba token quantities không được đánh tráo:
-
-| Đại lượng | Bao gồm |
+| Edge | Điều kiện |
 |---|---|
-| `evidence_tokens` / `context_tokens` | Text của selected evidence |
-| `prompt_tokens` | Instruction + title/format + evidence + question |
-| `output_tokens` | Câu trả lời do LLM sinh |
+| `same_passage` | Hai sentence liền nhau trong cùng passage |
+| `entity_overlap` | Hai sentence khác passage có named entity chung |
+| `title_mention` | Sentence ở passage A nhắc title của passage B |
 
-Pain point chính được đo bằng evidence/context tokens; RQ6 phải báo thêm prompt/output tokens và chi phí end-to-end.
+Main dùng cả ba edge. Code cho phép bật/tắt từng edge để chạy ablation.
 
-## 13. Pipeline của năm methods trong Main Comparison
+### 4.3 Seed retrieval và expansion
 
-| Method | Candidate/ranking pipeline | Graph | Pruning | Budget |
-|---|---|---|---|---:|
-| Dense BI | Bi-encoder score trên mọi sentence | Không | Semantic top/budget | 600 |
-| Dense CE | Cross-encoder score trên mọi sentence | Không | Semantic top/budget | 600 |
-| Graph 1-hop CE | Seeds → expansion 1-hop → CE | 1-hop | Semantic top/budget | 600 |
-| Graph 2-hop CE | Seeds → expansion 2-hop → CE | 2-hop | Semantic top/budget | 600 |
-| **Ours** | Seeds → 2-hop → CE → router → conditional scoring | 2-hop structure | Route-specific, pair-aware | **200** |
-
-Dense CE là controlled semantic baseline. Graph 1/2-hop đo lợi ích của expansion khi chưa có routing và pair-aware conditional selection.
-
-## 14. Main pipeline và adaptive fusion cũ
-
-### Main pipeline hiện tại
+BAAI/bge-m3 tính:
 
 ```text
-C
-├── Semantic(q,v)
-├── Graph structure: path/neighbors
-└── Router
-      ├── direct → semantic budget-fill
-      └── chained → Conditional(q,anchor,v) → pair-aware pruning
+s_seed(q,v) = cosine(Embed(q), Embed(title(v) + text(v)))
+S0 = TopK_v s_seed(q,v)
 ```
 
-### Adaptive fusion cũ/ablation
+Sau đó multi-source BFS tạo candidate pool:
 
 ```text
-C
-├── Top-K Semantic → S_sem
-├── Top-K GraphRel → S_graph
-└── disagreement + confidence + seed miss
-        → α(q)
-        → α(q)·Semantic + (1−α(q))·GraphRel
+C = {v ∈ V | distance(v,S0) ≤ H}
 ```
 
-Code adaptive vẫn tồn tại để chạy RQ4, nhưng main configs không bật `adaptive_alpha`. Không nên mô tả adaptive fusion là contribution chính khi viết kết quả hiện tại.
+Main dùng `K=5`, `H=2`. Gold answer, supporting facts và benchmark type không
+được dùng trong graph construction, seed retrieval hoặc expansion.
 
-Một biến thể graph-gated rescue cũng đã được thử: query-weighted PPR chỉ cộng residual cho `S_graph − S_sem` khi conditional CE xác nhận endpoint. Trên n=200, biến thể này không cải thiện Hotpot và làm 2Wiki Answer F1 giảm `0.5940 → 0.5865`; do đó strategy vẫn chỉ là ablation, không thuộc main pipeline.
+## 5. Stage 2 — Query-Conditioned Chain Verification
 
-## 15. Pseudocode main method
+### 5.1 Direct node relevance
+
+BAAI/bge-reranker-v2-m3 chấm mọi candidate:
 
 ```text
-INPUT: question q, passages P, budget B=200
+s_node(q,v) = CE(q, title(v) + text(v))
+```
 
-V ← split_passages_into_sentence_nodes(P)
-G ← build_graph(V)
-S0 ← top_5_by_bge_m3(q, V)
-C ← bfs_expand(G, S0, max_hops=2)
+### 5.2 Label-free routing
+
+Router chỉ đọc question text và không đọc `QAItem.type`:
+
+- `direct_comparison`: có comparison cue nhưng không có intermediate-relation cue.
+- `bridge_comparison`: có cả comparison cue và intermediate-relation cue.
+- `chained_reasoning`: các trường hợp còn lại.
+
+Các cue regex được khai báo tường minh trong
+`src/rivf/retrieval/question_router.py`. Direct route không chạy conditional CE;
+hai route còn lại chạy chain verification.
+
+### 5.3 Anchor selection
+
+Với route cần chain, lấy tối đa `M=2` anchor từ các passage khác nhau:
+
+```text
+A = TopM_a s_node(q,a)
+```
+
+### 5.4 Conditional link scoring
+
+Với mỗi anchor `a`, chỉ chấm cross-passage graph neighbors:
+
+```text
+N_cross(a) = {v | (a,v) ∈ E_G and title(v) != title(a)}
+s_link(q,a,v) = CE(q ⊕ "Known evidence:" ⊕ a, v)
+```
+
+### 5.5 Định nghĩa validated link
+
+Một link không được gọi là validated chỉ vì có graph edge. Main định nghĩa:
+
+```text
+L_a = TopL_{v ∈ N_cross(a)} s_link(q,a,v),  L=2
+L_valid = union_a {(a,v) | v ∈ L_a}
+```
+
+Code hỗ trợ thêm `conditional_link_min_score=τ`; main để `τ=None` vì raw CE
+logit không được giả định calibrated giống nhau giữa dataset. Nếu một endpoint
+được nhiều anchor validate, giữ anchor có conditional score cao nhất.
+
+## 6. Stage 3 — Chain-Preserving Evidence Compression
+
+Score được percentile-normalize trong từng câu hỏi:
+
+```text
+node(v) = percentile(s_node(q,v))
+link(a,v) = percentile(s_link(q,a,v))
+```
+
+Evidence unit có hai dạng:
+
+```text
+singleton: u = {v}
+validated pair: u = {a,v}, với (a,v) ∈ L_valid
+```
+
+Utility:
+
+```text
+U(q,{v}) = node(v)
+
+U(q,{a,v}) = node(a) + node(v) + β·link(a,v)
+```
+
+Main dùng `β=0.30`. Selector xếp unit theo utility và greedily nhận unit vừa
+budget:
+
+```text
+sum TokenCount(sentence.text) ≤ B,  B=200
+```
+
+Pair là atomic: nếu toàn bộ `{a,v}` không vừa budget, bỏ cả pair; không giữ
+endpoint `v` cô lập. Nếu anchor đã được chọn bởi unit trước, pair chỉ trả thêm
+chi phí của endpoint nhưng vẫn bảo đảm context cuối chứa cả hai node.
+
+Direct route dùng semantic budget-fill vì không có validated chain unit.
+
+## 7. Context và generation
+
+Selected sentences được group theo passage title và sentence order gốc. Mọi
+method trong cùng experiment dùng cùng prompt và:
+
+```text
+gpt-4o-mini-2024-07-18, temperature=0
+```
+
+Result row log cả model alias được yêu cầu và model thực tế API trả về, response
+ID, system fingerprint và API token usage khi các trường này có sẵn.
+
+## 8. Complexity
+
+Không tính chi phí encode embeddings đã cache:
+
+```text
+Seed retrieval:          O(|V|)
+Graph traversal:         O(|V| + |E_G|)
+Node cross-encoding:     O(|C|)
+Conditional scoring:     O(sum_{a∈A} |N_cross(a)|)
+Unit selection:          O(|C| log |C|)
+```
+
+## 9. Algorithm 1
+
+```text
+INPUT: question q, candidate passages P
+PARAMETERS: K=5, H=2, M=2, L=2, beta=0.30, B=200
+
+V  ← split_into_sentence_nodes(P)
+G  ← build_graph(V, adjacency + entity_overlap + title_mention)
+S0 ← top_K_by_bge_m3(q, V)
+C  ← bfs_expand(G, S0, max_hops=H)
 
 for v in C:
-    sem[v]   ← CrossEncoder(q, v)
-    graph[v] ← normalized_PPR(G, S0, v)  # logged/ablation signal
+    node[v] ← CE(q, v)
 
 route ← label_free_router(q)
 
 if route == direct_comparison:
-    selected ← semantic_budget_fill(C, B)
+    units ← {{v}: v in C}
 else:
-    anchor ← strongest_semantic_anchor(C)
-    for v in cross_passage_neighbors(anchor):
-        cond[v] ← CrossEncoder(q + anchor.text, v.text)
-    selected ← pair_aware_select(C, sem, cond, weight=0.30, budget=B)
+    A ← top_M_distinct_passage_anchors(C, node)
+    for a in A:
+        scores ← {v: CE(q + a, v) for v in cross_passage_neighbors(a)}
+        validated[a] ← top_L(scores)
+    units ← singleton_units(C) union validated_pair_units(validated)
 
-context ← group_selected_by_original_passage_order(selected)
-answer  ← LLM(q, context, temperature=0)
+for unit u:
+    utility[u] ← node utility, plus beta * link utility for pairs
 
-OUTPUT: answer, selected evidence, metrics, token/latency logs
+E ← greedy_atomic_select(units, budget=B)
+answer ← LLM(q, E, temperature=0)
+
+OUTPUT: answer, selected evidence, routes, validated links, metrics, provenance
 ```
 
-## 16. Code và config tương ứng
+## 10. Code mapping
 
-| Chức năng | File |
+| Block | File |
 |---|---|
-| Data model/title prefix | `src/rivf/data/schema.py` |
-| Seed retrieval | `src/rivf/retrieval/seed.py` |
-| Graph construction/BFS/PPR | `src/rivf/graph/build.py` |
-| Candidate và conditional scoring | `src/rivf/retrieval/scoring.py` |
-| Label-free router | `src/rivf/retrieval/question_router.py` |
-| Route-specific pruning | `src/rivf/retrieval/pruning.py` |
-| Prompt serialization | `src/rivf/generation/prompts.py` |
-| Experiment orchestration | `src/rivf/experiments/run_experiment.py` |
-| Adaptive fusion ablation | `src/rivf/retrieval/adaptive_alpha.py` |
-| Hotpot full config | `configs/final_hotpot_full_retrieval.yaml` |
-| 2Wiki full config | `configs/final_2wiki_full_retrieval.yaml` |
+| Data hygiene/loading | `src/rivf/data/hotpotqa.py` |
+| Graph/edge ablation | `src/rivf/graph/build.py` |
+| Seeds | `src/rivf/retrieval/seed.py` |
+| Node/link verification | `src/rivf/retrieval/scoring.py` |
+| Router | `src/rivf/retrieval/question_router.py` |
+| Atomic pair selection | `src/rivf/retrieval/pruning.py` |
+| Prompt/LLM | `src/rivf/generation/` |
+| Runner/provenance | `src/rivf/experiments/run_experiment.py` |
+| Canonical configs | `configs/README.md` |
 
-## 17. Các invariant cần giữ khi phát triển
+## 11. Invariants
 
-1. Không sử dụng answer, supporting facts hoặc dataset type trong inference pipeline.
-2. Ours không được vượt hard ceiling 200 evidence tokens trong main experiment.
-3. Baseline và Ours phải dùng cùng QID, prompt, LLM và temperature.
-4. Graph expansion tối đa 2-hop trừ khi ablation ghi rõ khác biệt.
-5. Không gọi `graph_score` là main ranking signal khi `alpha=1`.
-6. Không gọi selected-evidence tokens là total prompt tokens.
-7. Mọi thay đổi pipeline phải được kiểm chứng trên cả Hotpot và 2Wiki.
+1. Không dùng answer, supporting facts hoặc dataset type trong inference.
+2. Main GRAFT không cộng graph proximity/PPR vào relevance.
+3. Chỉ Top-L conditional links mới được gọi là validated.
+4. Validated pair được giữ hoặc bỏ nguyên khối.
+5. Main GRAFT không vượt 200 evidence tokens.
+6. Mọi method dùng cùng canonicalized candidate passages và QIDs.
+7. Development và evaluation manifests không giao nhau.
+8. Pilot/PPR/graph-rescue results cũ không được báo cáo như GRAFT-v1 final.

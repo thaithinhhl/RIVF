@@ -1,5 +1,9 @@
 # Result v0.1 — target 200 questions per benchmark
 
+> **Historical pilot, not GRAFT-v1.** Pipeline/config của các kết quả này khác
+> main method đã freeze trong [`../pipeline.md`](../pipeline.md). Không dùng các
+> bảng dưới đây làm final GRAFT-v1 claims.
+
 All values are pilot/subsample results, not full-benchmark claims. `N < 200` means the OpenAI daily quota interrupted generation; retrieval-only rows deliberately leave Answer metrics blank.
 
 ## Run status

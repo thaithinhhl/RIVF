@@ -24,6 +24,9 @@ def generate_candidates(
     prefer_mentioned_anchors: bool = False,
     query_weighted_ppr: bool = False,
     ppr_seed_temperature: float = 0.20,
+    graph_edge_types: set[str] | frozenset[str] | None = None,
+    conditional_link_top_l: int | None = 2,
+    conditional_link_min_score: float | None = None,
 ) -> list[Candidate]:
     """Seed retrieval -> graph expansion -> per-candidate semantic_score +
     graph_score, computed once.
@@ -46,7 +49,7 @@ def generate_candidates(
     -- sharper top-of-list precision, which matters most at a tight token
     budget where every selected slot has to count. Default off until
     validated; a pure component swap, so alpha's meaning is unchanged."""
-    g = build_graph(item)
+    g = build_graph(item, edge_types=graph_edge_types)
     seed_keys = [s.key for s in seed_retrieve(item, n=seed_n)]
     dist, parent = bfs_hop_distances_with_parents(g, seed_keys)
     within_reach = {k: d for k, d in dist.items() if d <= max_hops}
@@ -106,6 +109,8 @@ def generate_candidates(
             candidates,
             anchor_n=conditional_anchor_n,
             prefer_mentioned_anchors=prefer_mentioned_anchors,
+            link_top_l=conditional_link_top_l,
+            link_min_score=conditional_link_min_score,
         )
     return candidates
 
@@ -115,17 +120,23 @@ def _add_conditional_second_hop_scores(
     candidates: list[Candidate],
     anchor_n: int = 2,
     prefer_mentioned_anchors: bool = False,
+    link_top_l: int | None = 2,
+    link_min_score: float | None = None,
 ) -> None:
     """Score graph-linked second-hop candidates conditioned on strong anchors.
 
     The original question often retrieves a bridge sentence but is not
     lexically close to the answer-bearing second hop.  This branch augments
     the question with a high-confidence anchor and reranks only cross-passage
-    graph neighbours.  It is inference-only: no gold supporting facts or
-    answer text are consulted.
+    graph neighbours. A link is considered validated only when it is in the
+    Top-L conditional scores for its anchor and, when configured, clears the
+    minimum score. It is inference-only: no gold supporting facts or answer
+    text are consulted.
     """
     if anchor_n <= 0 or not candidates:
         return
+    if link_top_l is not None and link_top_l <= 0:
+        raise ValueError("link_top_l must be positive or None")
     by_key = {candidate.sentence.key: candidate for candidate in candidates}
     anchors: list[Candidate] = []
     covered_titles: set[str] = set()
@@ -197,10 +208,20 @@ def _add_conditional_second_hop_scores(
             conditioned_question,
             [candidate.sentence.embedding_text for candidate in linked],
         )
-        for candidate, score in zip(linked, scores):
+        ranked_links = sorted(
+            zip(linked, scores),
+            key=lambda pair: pair[1],
+            reverse=True,
+        )
+        if link_top_l is not None:
+            ranked_links = ranked_links[:link_top_l]
+        for candidate, score in ranked_links:
+            if link_min_score is not None and score < link_min_score:
+                continue
             if candidate.conditional_score is None or score > candidate.conditional_score:
                 candidate.conditional_score = score
                 candidate.conditional_anchor_key = anchor.sentence.key
+                candidate.conditional_validated = True
 
 
 def _normalize_title_match(text: str) -> str:

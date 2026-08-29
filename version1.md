@@ -1,5 +1,9 @@
 # Evidence-Efficient Graph Expansion for Multi-Hop QA — Kết quả thực nghiệm v1
 
+> **Không phải GRAFT-v1 final result.** Các bảng dưới đây là pilot/search
+> history. Không trộn chúng với runs từ canonical configs trong
+> [`configs/README.md`](configs/README.md).
+
 **Cập nhật:** 21/08/2026
 **Kế hoạch chạy:** xem `experiment.md`
 

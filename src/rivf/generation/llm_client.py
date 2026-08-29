@@ -20,9 +20,23 @@ def _get_client() -> OpenAI:
 
 
 def generate_answer(prompt: str, model: str = DEFAULT_MODEL) -> str:
+    return generate_answer_with_metadata(prompt, model=model)["prediction"]
+
+
+def generate_answer_with_metadata(prompt: str, model: str = DEFAULT_MODEL) -> dict:
+    """Generate one answer and retain API provenance/usage when available."""
     response = _get_client().chat.completions.create(
         model=model,
         messages=[{"role": "user", "content": prompt}],
         temperature=0,
     )
-    return response.choices[0].message.content.strip()
+    usage = response.usage
+    return {
+        "prediction": response.choices[0].message.content.strip(),
+        "api_response_id": getattr(response, "id", None),
+        "resolved_llm_model": getattr(response, "model", None),
+        "system_fingerprint": getattr(response, "system_fingerprint", None),
+        "api_prompt_tokens": usage.prompt_tokens if usage else None,
+        "api_completion_tokens": usage.completion_tokens if usage else None,
+        "api_total_tokens": usage.total_tokens if usage else None,
+    }
