@@ -25,6 +25,18 @@ _BRIDGE_RELATION_RE = re.compile(
     re.IGNORECASE,
 )
 
+# V2 keeps the frozen v1 router intact but recognizes common plural and
+# irregular relation nouns. For example, "do both films have directors from
+# the same country?" is a bridge comparison even though v1's singular-only
+# cue routes it as direct comparison.
+_BRIDGE_RELATION_V2_RE = re.compile(
+    r"\b(?:directors?|authors?|writers?|creators?|producers?|founders?|owners?|"
+    r"leaders?|fathers?|mothers?|parents?|grandfathers?|grandmothers?|sons?|"
+    r"daughters?|children|child|wives|wife|husbands?|spouses?|brothers?|"
+    r"sisters?|coaches|coach|managers?|presidents?)\b",
+    re.IGNORECASE,
+)
+
 
 def route_question(question: str) -> str:
     """Choose semantic comparison or chained conditional evidence retrieval.
@@ -36,6 +48,18 @@ def route_question(question: str) -> str:
     """
     is_comparison = bool(_COMPARISON_RE.search(question))
     has_intermediate_relation = bool(_BRIDGE_RELATION_RE.search(question))
+    if is_comparison:
+        return BRIDGE_COMPARISON if has_intermediate_relation else DIRECT_COMPARISON
+    return CHAINED_REASONING
+
+
+def route_question_v2(question: str) -> str:
+    """Plural-aware router used only by GRAFT-v2.
+
+    Keeping a separate entry point protects frozen GRAFT-v1 reproduction.
+    """
+    is_comparison = bool(_COMPARISON_RE.search(question))
+    has_intermediate_relation = bool(_BRIDGE_RELATION_V2_RE.search(question))
     if is_comparison:
         return BRIDGE_COMPARISON if has_intermediate_relation else DIRECT_COMPARISON
     return CHAINED_REASONING

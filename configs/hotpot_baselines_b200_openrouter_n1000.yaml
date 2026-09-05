@@ -1,0 +1,33 @@
+# Cost-matched baselines at Bmax=200 on the exact paired HotpotQA N=1,000 QIDs.
+name: hotpot_baselines_b200_openrouter_n1000
+dataset: data/raw/hotpot_dev_distractor_v1.json
+qid_manifest: data/manifests/hotpot_graft_v1_evaluation.json
+n_questions: 1000
+seed: 0
+stratified_sampling: true
+deduplicate_passages: true
+invalid_gold_policy: exclude
+backend: openrouter
+embedding_model: baai/bge-m3
+reranker_model: qwen/qwen3-reranker-8b
+call_llm: true
+llm_model: openai/gpt-4o-mini-2024-07-18
+llm_concurrency: 5
+include_candidates: false
+methods:
+  - name: Dense RAG
+    kind: dense_rag
+    use_reranker: true
+    budget_tokens: 200
+  - name: Graph 1-hop
+    kind: fixed_hop
+    hops: 1
+    use_reranker: true
+    graph_edge_types: [same_passage, entity_overlap, title_mention]
+    budget_tokens: 200
+  - name: Graph 2-hop
+    kind: fixed_hop
+    hops: 2
+    use_reranker: true
+    graph_edge_types: [same_passage, entity_overlap, title_mention]
+    budget_tokens: 200

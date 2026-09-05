@@ -1,0 +1,33 @@
+# Cost-matched baselines at Bmax=100 on the exact paired 2Wiki N=1,000 QIDs.
+name: 2wiki_baselines_b100_openrouter_n1000
+dataset: data/raw/2wikimultihopqa_dev.json
+qid_manifest: data/manifests/2wiki_graft_v1_evaluation.json
+n_questions: 1000
+seed: 0
+stratified_sampling: true
+deduplicate_passages: true
+invalid_gold_policy: exclude
+backend: openrouter
+embedding_model: baai/bge-m3
+reranker_model: qwen/qwen3-reranker-8b
+call_llm: true
+llm_model: openai/gpt-4o-mini-2024-07-18
+llm_concurrency: 5
+include_candidates: false
+methods:
+  - name: Dense RAG
+    kind: dense_rag
+    use_reranker: true
+    budget_tokens: 100
+  - name: Graph 1-hop
+    kind: fixed_hop
+    hops: 1
+    use_reranker: true
+    graph_edge_types: [same_passage, entity_overlap, title_mention]
+    budget_tokens: 100
+  - name: Graph 2-hop
+    kind: fixed_hop
+    hops: 2
+    use_reranker: true
+    graph_edge_types: [same_passage, entity_overlap, title_mention]
+    budget_tokens: 100

@@ -20,6 +20,7 @@ class Candidate:
     path_keys: tuple[tuple[str, int], ...] | None = None  # one shortest seed-to-node path
     neighbor_keys: tuple[tuple[str, int], ...] | None = None  # graph-adjacent candidates
     conditional_score: float | None = None  # CE(q + anchor, v), for second-hop rescue
+    conditional_gain: float | None = None  # CE(q + anchor, v) - CE(q, v)
     conditional_anchor_key: tuple[str, int] | None = None
     conditional_validated: bool = False  # True only for a retained Top-L/threshold link
 

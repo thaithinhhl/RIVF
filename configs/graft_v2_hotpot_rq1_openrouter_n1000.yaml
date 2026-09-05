@@ -1,0 +1,43 @@
+# GRAFT-v2 on the exact HotpotQA N=1,000 RQ1 QIDs, at two common maxima.
+name: graft_v2_hotpot_rq1_openrouter_n1000
+dataset: data/raw/hotpot_dev_distractor_v1.json
+qid_manifest: data/manifests/hotpot_graft_v1_evaluation.json
+n_questions: 1000
+seed: 0
+stratified_sampling: true
+deduplicate_passages: true
+invalid_gold_policy: exclude
+backend: openrouter
+embedding_model: baai/bge-m3
+reranker_model: qwen/qwen3-reranker-8b
+call_llm: true
+llm_model: openai/gpt-4o-mini-2024-07-18
+llm_concurrency: 2
+include_candidates: false
+deduplicate_identical_prompts: true
+methods:
+  - name: GRAFT-v2
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: hop
+    graph_edge_types: [same_passage, entity_overlap, title_mention]
+    strategy: graft_v2
+    direct_all_sentence_pool: true
+    conditional_rerank: true
+    conditional_anchor_n: 2
+    conditional_link_top_l: 2
+    conditional_link_min_gain: 0.0
+    conditional_weight: 0.30
+    token_cost_power: 1.0
+    min_marginal_score: 0.015
+    witness_min_titles: 2
+    witness_chain_target: 1
+    bridge_witness_chain_target: 2
+    witness_fallback_min_nodes: 2
+    bridge_witness_fallback_min_nodes: 4
+    witness_rescue_max_units: 0
+    serialized_cost_aware: true
+    compact_selection_order_prompt: true
+    alpha: 1.0
+    budget_tokens: [600, 200]

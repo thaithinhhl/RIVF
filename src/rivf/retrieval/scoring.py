@@ -27,6 +27,7 @@ def generate_candidates(
     graph_edge_types: set[str] | frozenset[str] | None = None,
     conditional_link_top_l: int | None = 2,
     conditional_link_min_score: float | None = None,
+    conditional_link_min_gain: float | None = None,
 ) -> list[Candidate]:
     """Seed retrieval -> graph expansion -> per-candidate semantic_score +
     graph_score, computed once.
@@ -111,6 +112,7 @@ def generate_candidates(
             prefer_mentioned_anchors=prefer_mentioned_anchors,
             link_top_l=conditional_link_top_l,
             link_min_score=conditional_link_min_score,
+            link_min_gain=conditional_link_min_gain,
         )
     return candidates
 
@@ -122,6 +124,7 @@ def _add_conditional_second_hop_scores(
     prefer_mentioned_anchors: bool = False,
     link_top_l: int | None = 2,
     link_min_score: float | None = None,
+    link_min_gain: float | None = None,
 ) -> None:
     """Score graph-linked second-hop candidates conditioned on strong anchors.
 
@@ -216,10 +219,15 @@ def _add_conditional_second_hop_scores(
         if link_top_l is not None:
             ranked_links = ranked_links[:link_top_l]
         for candidate, score in ranked_links:
+            direct_score = candidate.semantic_score or 0.0
+            gain = score - direct_score
             if link_min_score is not None and score < link_min_score:
+                continue
+            if link_min_gain is not None and gain < link_min_gain:
                 continue
             if candidate.conditional_score is None or score > candidate.conditional_score:
                 candidate.conditional_score = score
+                candidate.conditional_gain = gain
                 candidate.conditional_anchor_key = anchor.sentence.key
                 candidate.conditional_validated = True
 
@@ -227,3 +235,21 @@ def _add_conditional_second_hop_scores(
 def _normalize_title_match(text: str) -> str:
     """Case/punctuation-insensitive phrase used only for title containment."""
     return " ".join(re.sub(r"[^\w]+", " ", text.casefold()).split())
+
+
+def question_mentioned_titles(
+    question: str, titles: list[str] | tuple[str, ...] | set[str]
+) -> tuple[str, ...]:
+    """Passage titles explicitly present in the question, in mention order.
+
+    This is inference-only grounding for GRAFT-v2's direct-comparison route;
+    it never consults benchmark labels, gold evidence, or the answer.
+    """
+    normalized_question = _normalize_title_match(question)
+    mentioned = {
+        title: normalized_question.find(_normalize_title_match(title))
+        for title in titles
+        if _normalize_title_match(title)
+        and _normalize_title_match(title) in normalized_question
+    }
+    return tuple(sorted(mentioned, key=lambda title: (mentioned[title], title)))

@@ -1,0 +1,36 @@
+name: wise_v3_2wiki_diagnostic_release_year
+dataset: data/raw/2wikimultihopqa_dev.json
+qid_manifest: data/manifests/diagnostic_2wiki_release_year.json
+n_questions: 1
+seed: 0
+stratified_sampling: false
+deduplicate_passages: true
+invalid_gold_policy: exclude
+backend: openrouter
+embedding_model: baai/bge-m3
+reranker_model: qwen/qwen3-reranker-8b
+llm_model: openai/gpt-4o-mini-2024-07-18
+call_llm: true
+llm_concurrency: 1
+include_candidates: false
+methods:
+  - name: WISE-v3
+    kind: wise_v3
+    use_reranker: true
+    chain_aware_prompt: true
+    planner_backend: openrouter
+    planner_model: openai/gpt-4o-mini-2024-07-18
+    verifier_backend: openrouter
+    verifier_model: openai/gpt-4o-mini-2024-07-18
+    seed_n: 5
+    max_hops: 2
+    claim_support_threshold: 0.7
+    claim_top_k: 5
+    claim_prefilter_k: 8
+    dependency_threshold: 0.7
+    max_path_hops: 3
+    dependency_path_top_k: 3
+    confidence_temperature: 1.0
+    witness_sufficiency_threshold: 0.8
+    max_search_states: 100000
+    budget_tokens: 200

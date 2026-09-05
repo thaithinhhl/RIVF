@@ -1,0 +1,71 @@
+# Development-only paired retrieval screen. Never use evaluation QIDs to tune v2.
+name: graft_v2_2wiki_development_openrouter
+dataset: data/raw/2wikimultihopqa_dev.json
+qid_manifest: data/manifests/2wiki_graft_v1_development.json
+n_questions: 398
+seed: 0
+stratified_sampling: true
+deduplicate_passages: true
+invalid_gold_policy: exclude
+backend: openrouter
+embedding_model: baai/bge-m3
+reranker_model: qwen/qwen3-reranker-8b
+call_llm: false
+include_candidates: true
+methods:
+  - name: Dense RAG
+    kind: dense_rag
+    use_reranker: true
+    budget_tokens: 200
+  - name: Graph 1-hop
+    kind: fixed_hop
+    hops: 1
+    use_reranker: true
+    graph_edge_types: [same_passage, entity_overlap, title_mention]
+    budget_tokens: 200
+  - name: Graph 2-hop
+    kind: fixed_hop
+    hops: 2
+    use_reranker: true
+    graph_edge_types: [same_passage, entity_overlap, title_mention]
+    budget_tokens: 200
+  - name: GRAFT-v1
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: hop
+    graph_edge_types: [same_passage, entity_overlap, title_mention]
+    strategy: graft
+    conditional_rerank: true
+    conditional_anchor_n: 2
+    conditional_link_top_l: 2
+    conditional_weight: 0.30
+    preserve_pairs: true
+    alpha: 1.0
+    budget_tokens: 200
+  - name: GRAFT-v2
+    kind: selective_graph
+    max_hops: 2
+    use_reranker: true
+    graph_rel_method: hop
+    graph_edge_types: [same_passage, entity_overlap, title_mention]
+    strategy: graft_v2
+    direct_all_sentence_pool: true
+    conditional_rerank: true
+    conditional_anchor_n: 2
+    conditional_link_top_l: 2
+    conditional_link_min_gain: 0.0
+    conditional_weight: 0.30
+    token_cost_power: 1.0
+    min_marginal_score: 0.015
+    marginal_coverage_bonus: 0.0
+    witness_min_titles: 2
+    witness_chain_target: 1
+    bridge_witness_chain_target: 2
+    witness_fallback_min_nodes: 2
+    bridge_witness_fallback_min_nodes: 4
+    witness_rescue_max_units: 0
+    serialized_cost_aware: true
+    compact_selection_order_prompt: true
+    alpha: 1.0
+    budget_tokens: 200

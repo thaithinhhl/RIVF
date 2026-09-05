@@ -37,3 +37,14 @@ Graph 1-hop-600, Graph 2-hop-600, GRAFT-600, and GRAFT-200.
 Canonical constants are `K=5`, `H=2`, `M=2`, `L=2`, `beta=0.30`, and
 `B=200`. Graph structure proposes candidates; it is not a direct relevance
 term in the main rank.
+
+## GRAFT-v2 development
+
+`graft_v2_hotpot_development_openrouter.yaml` and
+`graft_v2_2wiki_development_openrouter.yaml` compare frozen GRAFT-v1 with the
+three B=200 baselines, frozen GRAFT-v1, and route-adaptive minimal-witness
+GRAFT-v2 on development manifests only. V2 treats the common 200-token setting
+as a maximum rather than a fill target, uses compact serialized-context cost,
+and stops after the route's required witness is complete. It is specified in
+[`../pipeline_v2.md`](../pipeline_v2.md) and is not a canonical/final paper
+method until its parameters are frozen and evaluated on fresh, untouched QIDs.
